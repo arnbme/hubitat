@@ -19,7 +19,7 @@
  *					other modes and entry delay handled by Big Talker
  */
 definition(
-    name: "KeypadCodes",
+    name: "KeypadTest",
     namespace: "arnbme",
     author: "Arn Burkhoff",
     description: "Use keypad pin codes to control system lighting and other things",
