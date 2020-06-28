@@ -70,6 +70,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jun 28, 2020 v0.0.4	Change pauseExecution to a runIn
  *  Jun 27, 2020 v0.0.3	Support user defined thermostat mode: dry Turn on dry when idle and mode=dry regardless of temperature
  *							Used virtual thermostat command setSupportedThermostatModes adding dry
  *								with string [cool, off, dry, heat, auto, emergency heat] also ajusting settings order on device
@@ -98,7 +99,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.3";
+	return "0.0.4";
 	}
 
 def mainPage()
@@ -157,9 +158,10 @@ def temperatureHandler(evt)
 	{
 //	Temperature or cooling setPoint changed on Thermostat
 	if (settings.logDebugs) log.debug  "temperatureHandler entered Value: ${evt.value}  mode: ${globalThermostat.currentValue("thermostatMode")}"
-	pauseExecution(2000)				//allow any operating state change from the virtual thermostat device to complete, it seems delayed, dont know why
-//	change above to a runin and unschedule in thermostatModeHandler
-	thermostatModeHandler(evt)
+//	pauseExecution(2000)				//allow any operating state change from the virtual thermostat device to complete, it seems delayed, dont know why
+//	thermostatModeHandler(evt)
+//	change above to a runin and unschedule in thermostatModeHandler v004
+	runIn(2,thermostatModeHandler,[data: ["value":"${evt.value}"]])		//This overrwrites prior pending requests
 	}
 
 def thermostatModeHandler(evt)
