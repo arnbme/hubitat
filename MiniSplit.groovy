@@ -70,6 +70,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jun 28, 2020 v0.0.5 Process HSM arming Status
  *  Jun 28, 2020 v0.0.4	Change pauseExecution to a runIn
  *  Jun 27, 2020 v0.0.3	Support user defined thermostat mode: dry Turn on dry when idle and mode=dry regardless of temperature
  *							Used virtual thermostat command setSupportedThermostatModes adding dry
@@ -99,7 +100,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.4";
+	return "0.0.5";
 	}
 
 def mainPage()
@@ -145,6 +146,7 @@ def initialize()
 		subscribe(globalThermostat, "coolingSetpoint", temperatureHandler)
 		subscribe(globalThermostat, "temperature", temperatureHandler)
 		subscribe(globalThermostat, "thermostatMode", temperatureHandler)
+		subscribe(location, "hsmStatus", hsmStatusHandler)
 		}
 	}
 
@@ -162,6 +164,51 @@ def temperatureHandler(evt)
 //	thermostatModeHandler(evt)
 //	change above to a runin and unschedule in thermostatModeHandler v004
 	runIn(2,thermostatModeHandler,[data: ["value":"${evt.value}"]])		//This overrwrites prior pending requests
+	}
+
+void hsmStatusHandler(evt)
+	{
+//	HSM arming status changed
+	if (settings.logDebugs) log.debug  "hsmStatusHandler entered Value: ${evt.value}"
+	if (evt.value.startsWith('arming'))
+		{}
+	else
+	if (evt.value=='disarmed')
+		{
+		def offMode=state?.offMode
+		switch (offMode)
+			{
+			case 'ignore':
+				break
+			case 'off':
+				globalThermostat.off()
+				break
+			case 'cool':
+				globalThermostat.cool()
+				break
+			case 'dry':
+				globalThermostat.setThermostatMode('dry')
+				break
+			case 'auto':
+				globalThermostat.auto()
+				break
+			case 'heat':
+				globalThermostat.heat()
+				break
+			case 'emergency heat':
+				globalThermostat.emergencyHeat()
+				break
+			}
+		state.offMode='ignore'
+		}
+	else
+	if (evt.value=='armedAway')
+		{
+		state.offMode=globalThermostat.currentValue("thermostatMode")		//restore upon disarm
+		globalThermostat.off()
+		}
+	else
+		state.offMode='ignore'
 	}
 
 def thermostatModeHandler(evt)
