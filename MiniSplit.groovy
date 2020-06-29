@@ -41,6 +41,7 @@
  *      ACDry74Swing - Mode: Dry, Temperature: 74F 25C Swing: On (swing, louvers and other settings: whatever you want)
  *				Dry may or may not utilize temperature or fan speed setting depending upon the mini-split hardware,
  8				check the manufacturer's operating manual
+ *      ACFanSwing - Mode: Fan, Temperature: n/a Swing: On (swing, louvers and other settings: whatever you want)
  *		AC Off - Mode: off
  *  7. Adjust IR code names in the code as necessary
  *
@@ -70,6 +71,11 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jun 28, 2020 v0.0.6 Set the cooling cycle as follows applies when mode is cool
+ *					cooling >=cooling set point
+ *					drying	>=cooling set point - hysterisis
+ *					fan		>=cooling set point - hysterisis*2
+ *					off		< cooling set point - hysterisis*2
  *  Jun 28, 2020 v0.0.5 Process HSM arming Status
  *  Jun 28, 2020 v0.0.4	Change pauseExecution to a runIn
  *  Jun 27, 2020 v0.0.3	Support user defined thermostat mode: dry Turn on dry when idle and mode=dry regardless of temperature
@@ -100,7 +106,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.5";
+	return "0.0.6";
 	}
 
 def mainPage()
@@ -189,6 +195,9 @@ void hsmStatusHandler(evt)
 			case 'dry':
 				globalThermostat.setThermostatMode('dry')
 				break
+			case 'fan':
+				globalThermostat.setThermostatMode('fan')
+				break
 			case 'auto':
 				globalThermostat.auto()
 				break
@@ -198,11 +207,17 @@ void hsmStatusHandler(evt)
 			case 'emergency heat':
 				globalThermostat.emergencyHeat()
 				break
-			}
+/*			default:
+				forget about this, execute is not allowed in Hubitat
+				def cmd = "globalThermostat.${offMode}()"
+				log.debug "cmd: $cmd"
+				cmd.execute()
+				break
+*/			}
 		state.offMode='ignore'
 		}
 	else
-	if (evt.value=='armedAway')
+	if (evt.value=='armedAway' || evt.value == 'armedNight')
 		{
 		state.offMode=globalThermostat.currentValue("thermostatMode")		//restore upon disarm
 		globalThermostat.off()
@@ -213,42 +228,64 @@ void hsmStatusHandler(evt)
 
 def thermostatModeHandler(evt)
 	{
-//	Thermostat Operating Mode changed, blast IR code to mini-splits
-	def acMode = globalThermostat.currentValue("thermostatOperatingState")
+//	Thermostat operating state changed, blast IR code to mini-splits
+//	Note this ignores the thermostat device operatingMode
+	def acMode = globalThermostat.currentValue("thermostatMode")
 	if (settings.logDebugs) log.debug  "thermostatModeHandler entered Value: ${evt.value} acMode: $acMode"
-	def irCode='nada'
-	def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
-	def coolSetPointBD = coolSetPoint as BigDecimal
-	def dryPoint = (((coolSetPointBD * 10) - 3)/10)
+	def irCode='AC Off'
 	switch (acMode)
 		{
-		case 'cooling':
-			if (location.hsmStatus=='armedAway'|| globalThermostat.currentValue('thermostatMode') != 'cool')
+		case 'cool':
+			def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
+			def coolSetPointBD = coolSetPoint as BigDecimal
+			def hysteresis = globalThermostat.currentValue("hysteresis")
+			def dryPoint=coolSetPointBD
+			dryPoint=dryPoint.subtract(hysteresis)
+			def fanPoint=dryPoint
+			fanPoint=fanPoint.subtract(hysteresis)
+			def temperature=globalThermostat.currentValue("temperature") as BigDecimal
+			if (settings.logDebugs) log.debug "coolSetPointBD: $coolSetPointBD hysteresis: $hysteresis dryPoint: $dryPoint fanPoint: $fanPoint temperature: $temperature"
+
+/*			lots of trouble with BigDecimal compares!
+			res = temperature.compareTo(coolSetPointBD)
+			log.debug "res; $res"
+			res = 0 "Both values are equal ";
+			res = 1 "First Value is greater ";
+			res = -1 "Second value is greater";
+*/
+			if (temperature.compareTo(coolSetPointBD) != -1)
+				{
+				if (coolSetPoint < 72) irCode='AC On2169'
+				else
+				if (coolSetPoint < 74) irCode='AC On2169'
+				else
+				if (coolSetPoint < 76) irCode='AC On2271'
+				else
+				if (coolSetPoint < 78) irCode='AC On2373'
+				else
+					irCode='AC On2475'
+				}
+			else
+			if (temperature.compareTo(dryPoint) != -1)
+				irCode='ACDry74Swing'
+			else
+			if (temperature.compareTo(fanPoint) != -1)
+				irCode='ACFanSwing'
+			else
 				irCode='AC Off'
-			else
-			if (globalThermostat.currentValue("temperature") < coolSetPointBD)
-				irCode='ACDry74Swing'
-			else
-			if (coolSetPoint < 72) irCode='AC On2169'
-			else
-			if (coolSetPoint < 74) irCode='AC On2169'
-			else
-			if (coolSetPoint < 76) irCode='AC On2271'
-			else
-			if (coolSetPoint < 78) irCode='AC On2373'
-			else
-				irCode='AC On2475'
 			break
-		default:
+
+		case 'off':
 			irCode='AC Off'
-			if (location.hsmStatus=='armedAway')
-				{}
-			else
-			if (globalThermostat.currentValue("thermostatMode") == 'dry')
-				irCode='ACDry74Swing'
-			else
-			if (acMode=='idle' && globalThermostat.currentValue("thermostatMode") == 'cool' && globalThermostat.currentValue("temperature") >= coolSetPointBD)
-				irCode='ACDry74Swing'
+			break
+
+		case 'dry':
+			irCode='ACDry74Swing'
+			break
+
+		case 'fan':
+			irCode='ACFanSwing'
+			break
 		}
 	if (settings.logDebugs) log.debug  "thermostatModeHandler irCode: $irCode Prior irCode: ${state.priorIrCode}"
 	if (irCode != state?.priorIrCode)
@@ -260,6 +297,9 @@ def thermostatModeHandler(evt)
 		else
 		if (irCode=='AC Off')
 			globalThermostat.setThermostatFanMode('off')
+		else
+		if (irCode=='ACFanSwing')
+			globalThermostat.setThermostatFanMode('only')
 		else
 			globalThermostat.setThermostatFanMode('cool')
 		}
