@@ -46,7 +46,6 @@
  *  7. Adjust IR code names in the code as necessary
  *
  *	Notes:
- *	Mini-split devices operate in "cool" and "dry" modes only, allowing for manual control with the remote in other modes
  *	Most Mini-splits use Celcious for native temperature settings. When using Fahrenheit, temperature is appoximate.
  *	Most Mini-splits have a built in non accessable thermostat.
  *  IR communication is one way, from remote or IR blaster to mini-split
@@ -71,7 +70,11 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
- *  Jun 28, 2020 v0.0.6 Set the cooling cycle as follows applies when mode is cool
+ *  Jun 30, 2020 v0.0.7 Add bool for standard cooling or extended cooling logic
+ *							standard Cool mode directly controlled by thermostat
+ *							add logic for heat and emergency heat
+ *							Attempted setting mode 'mycool' but dashboard hides temperature controls so used input seting.
+ *  Jun 28, 2020 v0.0.6 Set the cooling cycle as follows applies when mode is cool and globalMyCool is true
  *					cooling >=cooling set point
  *					drying	>=cooling set point - hysterisis
  *					fan		>=cooling set point - hysterisis*2
@@ -80,7 +83,7 @@
  *  Jun 28, 2020 v0.0.4	Change pauseExecution to a runIn
  *  Jun 27, 2020 v0.0.3	Support user defined thermostat mode: dry Turn on dry when idle and mode=dry regardless of temperature
  *							Used virtual thermostat command setSupportedThermostatModes adding dry
- *								with string [cool, off, dry, heat, auto, emergency heat] also ajusting settings order on device
+ *								with string [cool, off, dry, fan, heat, auto, emergency heat] also ajusting settings order on device
  *  						Subscribe to thermostatMode changes
  *							set Fan mode to dry, cool, or off giving clear visual operational indication
  *  Jun 26, 2020 v0.0.2	Delay temperature and coolSetPoint changes or 2 seconds allowing any virtual thermostat operating mode changes to complete
@@ -106,7 +109,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.6";
+	return "0.0.7";
 	}
 
 def mainPage()
@@ -119,6 +122,8 @@ def mainPage()
 				title: "Disable All Functions. Default: Off/False"
 			input "logDebugs", "bool", required: true, defaultValue: false,
 				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
+			input "globalMyCool", "bool", required: true, defaultValue: false,
+				title: "ON: Uses app's extended cooling logic with Fan, Dry and Cool points.<br />OFF: Follows Thermostat's cooling and idle state. Default: Off/False"
 			input "globalThermostat", "capability.thermostat", required: true, multiple: false,
 				title: "A Thermostat that controls the Mini splits"
 			input "globalIrBlasters", "capability.actuator", required: true, multiple: true,
@@ -236,41 +241,83 @@ def thermostatModeHandler(evt)
 	switch (acMode)
 		{
 		case 'cool':
-			def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
-			def coolSetPointBD = coolSetPoint as BigDecimal
-			def hysteresis = globalThermostat.currentValue("hysteresis")
-			def dryPoint=coolSetPointBD
-			dryPoint=dryPoint.subtract(hysteresis)
-			def fanPoint=dryPoint
-			fanPoint=fanPoint.subtract(hysteresis)
-			def temperature=globalThermostat.currentValue("temperature") as BigDecimal
-			if (settings.logDebugs) log.debug "coolSetPointBD: $coolSetPointBD hysteresis: $hysteresis dryPoint: $dryPoint fanPoint: $fanPoint temperature: $temperature"
-
-/*			lots of trouble with BigDecimal compares!
-			res = temperature.compareTo(coolSetPointBD)
-			log.debug "res; $res"
-			res = 0 "Both values are equal ";
-			res = 1 "First Value is greater ";
-			res = -1 "Second value is greater";
-*/
-			if (temperature.compareTo(coolSetPointBD) != -1)
+			if (settings.globalMyCool)
 				{
-				if (coolSetPoint < 72) irCode='AC On2169'
+				def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
+				def coolSetPointBD = coolSetPoint as BigDecimal
+				def hysteresis = globalThermostat.currentValue("hysteresis")
+				def dryPoint=coolSetPointBD
+				dryPoint=dryPoint.subtract(hysteresis)
+				def fanPoint=dryPoint
+				fanPoint=fanPoint.subtract(hysteresis)
+				def temperature=globalThermostat.currentValue("temperature") as BigDecimal
+				if (settings.logDebugs) log.debug "coolSetPointBD: $coolSetPointBD hysteresis: $hysteresis dryPoint: $dryPoint fanPoint: $fanPoint temperature: $temperature"
+
+	/*			lots of trouble with BigDecimal compares!
+				res = temperature.compareTo(coolSetPointBD)
+				log.debug "res; $res"
+				res = 0 "Both values are equal ";
+				res = 1 "First Value is greater ";
+				res = -1 "Second value is greater";
+	*/
+				if (temperature.compareTo(coolSetPointBD) != -1)
+					{
+					if (coolSetPoint < 72) irCode='AC On2169'
+					else
+					if (coolSetPoint < 74) irCode='AC On2169'
+					else
+					if (coolSetPoint < 76) irCode='AC On2271'
+					else
+					if (coolSetPoint < 78) irCode='AC On2373'
+					else
+						irCode='AC On2475'
+					}
 				else
-				if (coolSetPoint < 74) irCode='AC On2169'
+				if (temperature.compareTo(dryPoint) != -1)
+					irCode='ACDry74Swing'
 				else
-				if (coolSetPoint < 76) irCode='AC On2271'
+				if (temperature.compareTo(fanPoint) != -1)
+					irCode='ACFanSwing'
 				else
-				if (coolSetPoint < 78) irCode='AC On2373'
-				else
-					irCode='AC On2475'
+					irCode='AC Off'
 				}
 			else
-			if (temperature.compareTo(dryPoint) != -1)
-				irCode='ACDry74Swing'
-			else
-			if (temperature.compareTo(fanPoint) != -1)
-				irCode='ACFanSwing'
+				{
+				if (globalThermostat.currentValue("thermostatOperatingState") =='cooling')
+					{
+					def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
+					if (coolSetPoint < 72) irCode='AC On2169'
+					else
+					if (coolSetPoint < 74) irCode='AC On2271'
+					else
+					if (coolSetPoint < 76) irCode='AC On2373'
+					else
+					if (coolSetPoint < 78) irCode='AC On2475'
+					else
+						irCode='AC On2577'
+					}
+				else
+					irCode='AC Off'
+				}
+			break
+
+		case 'heat':				//follows the thermostat command and settings
+		case 'emergency heat':		//follows the thermostat commands and settings
+			if (globalThermostat.currentValue("thermostatOperatingState") =='heating')
+				{
+				def heatSetPoint = globalThermostat.currentValue("heatingSetpoint")
+				if (heatSetPoint <= 68) irCode='ACHeat2068'
+				else
+				if (heatSetPoint <= 70) irCode='ACHeat2170'
+				else
+				if (heatSetPoint <= 72) irCode='ACHeat2272'
+				else
+				if (heatSetPoint <= 74) irCode='ACHeat2374'
+				else
+				if (heatSetPoint <= 76) irCode='ACHeat2476'
+				else
+					irCode='ACHeat2578'
+				}
 			else
 				irCode='AC Off'
 			break
