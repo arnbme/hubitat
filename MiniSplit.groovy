@@ -70,6 +70,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jun 30, 2020 v0.0.8 Fix BigDecimal issues calculating dryPoint and fanPoint
  *  Jun 30, 2020 v0.0.7 Add bool for standard cooling or extended cooling logic
  *							standard Cool mode directly controlled by thermostat
  *							add logic for heat and emergency heat
@@ -109,7 +110,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.7";
+	return "0.0.8";
 	}
 
 def mainPage()
@@ -244,23 +245,23 @@ def thermostatModeHandler(evt)
 			if (settings.globalMyCool)
 				{
 				def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
-				def coolSetPointBD = coolSetPoint as BigDecimal
-				def hysteresis = globalThermostat.currentValue("hysteresis")
-				def dryPoint=coolSetPointBD
-				dryPoint=dryPoint.subtract(hysteresis)
-				def fanPoint=dryPoint
-				fanPoint=fanPoint.subtract(hysteresis)
+				def coolSetPointBD = new BigDecimal(coolSetPoint)
+				def hysteresis = globalThermostat.currentValue("hysteresis") as BigDecimal
+				def dryPoint=coolSetPointBD - hysteresis
+				def fanPoint=dryPoint - hysteresis
 				def temperature=globalThermostat.currentValue("temperature") as BigDecimal
 				if (settings.logDebugs) log.debug "coolSetPointBD: $coolSetPointBD hysteresis: $hysteresis dryPoint: $dryPoint fanPoint: $fanPoint temperature: $temperature"
 
-	/*			lots of trouble with BigDecimal compares!
+	/*			had lots of trouble with BigDecimal compares and setting fields, had to use compareTo
+				but fixed as of V008 using new BigDecimal on CoolSetPointBD. it was a learning experience
 				res = temperature.compareTo(coolSetPointBD)
 				log.debug "res; $res"
 				res = 0 "Both values are equal ";
 				res = 1 "First Value is greater ";
 				res = -1 "Second value is greater";
 	*/
-				if (temperature.compareTo(coolSetPointBD) != -1)
+//				if (temperature.compareTo(coolSetPointBD) != -1)
+				if (temperature>=coolSetPointBD)
 					{
 					if (coolSetPoint < 72) irCode='AC On2169'
 					else
@@ -273,10 +274,12 @@ def thermostatModeHandler(evt)
 						irCode='AC On2475'
 					}
 				else
-				if (temperature.compareTo(dryPoint) != -1)
+//				if (temperature.compareTo(dryPoint) != -1)
+				if (temperature>=dryPoint)
 					irCode='ACDry74Swing'
 				else
-				if (temperature.compareTo(fanPoint) != -1)
+//				if (temperature.compareTo(fanPoint) != -1)
+				if (temperature>=fanPoint)
 					irCode='ACFanSwing'
 				else
 					irCode='AC Off'
