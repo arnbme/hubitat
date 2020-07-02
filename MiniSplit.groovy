@@ -70,7 +70,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
- *  Jun 30, 2020 v0.0.8 Fix BigDecimal issues calculating dryPoint and fanPoint
+ *  Jun 30, 2020 v0.0.8 Fix BigDecimal problem calculating dryPoint and fanPoint
  *  Jun 30, 2020 v0.0.7 Add bool for standard cooling or extended cooling logic
  *							standard Cool mode directly controlled by thermostat
  *							add logic for heat and emergency heat
@@ -350,6 +350,9 @@ def thermostatModeHandler(evt)
 		else
 		if (irCode=='ACFanSwing')
 			globalThermostat.setThermostatFanMode('only')
+		else
+		if (settings.globalMyCool)
+			globalThermostat.setThermostatFanMode('myCool')
 		else
 			globalThermostat.setThermostatFanMode('cool')
 		}
