@@ -10,6 +10,11 @@
  *		Allow 3 seconds for TV to fully turn off before it responds to On commands
  *      Just to much of a pain doing this with Hubitat Rule Machine
  *
+ *		Note: The cable box may to have a 20 second time frame where it wont react to the blaster after a blaster valid command
+ *				however it always reacts to manual remote
+ *				Cable box is very sensitive to IR blaster's distance and position sometimes refusing to respond
+ *
+ *
  *  Copyright 2020 Arn Burkhoff
  *
  * 	Changes to Apache License
@@ -62,7 +67,7 @@ def mainPage()
 			input "globalIrBlaster", "capability.actuator", required: true, multiple: false,
 				title: "One IR Blaster"
 			input "globalVirtualSwitch", "capability.switch", required: true, multiple: false,
-				title: "One Virual Switch"
+				title: "One Virtual Switch"
 			}
 		}
 	}
