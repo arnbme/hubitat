@@ -22,7 +22,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 07, 2020 v0.0.2 Add Time input field and logic for lights off
  *  Jul 07, 2020 v0.0.1 Handle HSM status changes
+ *						comment out sunset sunrise logic for now
  *  Jul 05, 2020 v0.0.0 Create with logic from RM lux lighing rule
  */
 
@@ -43,7 +45,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.1";
+	return "0.0.2";
 	}
 
 def mainPage()
@@ -58,6 +60,7 @@ def mainPage()
 				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
 			input "globalLuxSensors", "capability.illuminanceMeasurement", required: true, multiple: true,
 				title: "Lux sensors. When more than one, the average lux value is used"
+			input "globalTimeOff", "time", title: "Optional: Turn off lighting devices at this time daily. Leave blank to ignore", required: false
 			input "globalLights", "capability.switch", required: true, multiple: true, submitOnChange: true,
 				title: "One or more Bulbs, Leds or Switches"
 
@@ -91,15 +94,18 @@ def updated() {
 def initialize()
 	{
 	if(settings.logDebugs)
-		runIn(1800,logsOff)			// turns off debug logging after 30 min
+		runIn(1800,logsOff)			//turns off debug logging after 30 min
 	else
 		unschedule(logsOff)
+	unschedule(timeOffHandler)		//clear any pending scheduled events
 	if (globalDisable)
 		{}
 	else
 		{
 		subscribe(globalLuxSensors, "illuminance", luxHandler)
 		subscribe(location, "hsmStatus", hsmStatusHandler)
+		if (globalTimeOff)
+			schedule(globalTimeOff, timeOffHandler)
 		}
 	}
 
@@ -165,6 +171,13 @@ void hsmStatusHandler(evt)
 		lightsOff()
 	}
 
+void timeOffHandler()
+	{
+//	Timed lights off, could be direct to lightsOff, but leave incase more logic is needed
+	if (settings.logDebugs) log.debug  "luxLighting timeOffHandler"
+	lightsOff()
+	}
+
 void lightsOn()
 	{
 	def settingName=""
@@ -174,7 +187,7 @@ void lightsOn()
 		if (settings."$settingName")
 			{
 			if (settings.logDebugs) log.debug "doing setlevel ${it.name} ${it.id} ${settingName}: " + settings."$settingName"
-			it.setLevel(settings."$settingName", 3)
+			it.setLevel(settings."$settingName", 5)
 			}
 		else
 			{
