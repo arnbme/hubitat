@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 08, 2020 v0.0.3 Set state.currLux in hsmStatusHandler
+ *						luxHandler clean up compare for On or Off, make it more understandable
  *  Jul 07, 2020 v0.0.2 Add Time input field and logic for lights off
  *  Jul 07, 2020 v0.0.1 Handle HSM status changes
  *						comment out sunset sunrise logic for now
@@ -45,12 +47,12 @@ preferences {
 
 def version()
 	{
-	return "0.0.2";
+	return "0.0.3";
 	}
 
 def mainPage()
 	{
-	dynamicPage(name: "mainPage", title: "LUX Lighting Settings", install: true, uninstall: true)
+	dynamicPage(name: "mainPage", title: "(V${version()}) Lux Lighting Settings", install: true, uninstall: true)
 		{
 		section
 			{
@@ -70,10 +72,10 @@ def mainPage()
 				if (it.hasCommand('setLevel'))
 					{
 					input "global${it.id}Dim", "number", required: false, multiple: false, range: "1..100",
-						title: "${it.name} Brightness Level 1 to 100, leave blank for ON with no level"
+						title: "${it.name} Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
 					}
 				input "global${it.id}Motion", "capability.motionSensor", required: false, multiple: false,
-					title: "${it.name} If this Motion Sensor is active, do not set light Off"
+					title: "${it.name} If this Motion Sensor is active, do not set light Off (Optional)"
 				}
 			}
 		}
@@ -138,7 +140,6 @@ def luxHandler(evt)
 	if (mmdd > '0430' && mmdd < '1001') 	// May 1 to Sep 30 use 125 lux due to leaves on trees
 		testLux = new Integer("125")
 
-//	if (location.hsmStatus != 'disarmed')
 	if (location.hsmStatus == 'armedNight')
 		{
 		state.currLux = testLux + 1
@@ -152,11 +153,14 @@ def luxHandler(evt)
 //		if (settings.logDebugs) log.debug "Not between sunrise+45 and sunset-45 due to sunset rule"
 //		return
 //		}
-
-	if (currLux <= testLux && lastLux > testLux)		//lights on
-		lightsOn()
+    if (settings.logDebugs) log.debug "currLux: $currLux lastLux: $lastLux testLux: $testLux"
+	if (currLux <= testLux)
+		{
+		if (lastLux > testLux)		//lights on
+			lightsOn()
+		}
 	else
-	if (lastLux <= testLux && currLux > testLux)		//lights off
+	if (lastLux <= testLux)			//lights off
 		lightsOff()
 	}
 
@@ -168,8 +172,15 @@ void hsmStatusHandler(evt)
 		luxHandler(evt)
 	else
 	if (evt.value == 'armedNight')
-		lightsOff()
-	}
+        {
+        lightsOff()
+    	def testLux = new Integer("300")
+	    def mmdd = new Date().format( 'MMdd')	// mmdd is a text String, est accordingly
+	    if (mmdd > '0430' && mmdd < '1001') 	// May 1 to Sep 30 use 125 lux due to leaves on trees
+		    testLux = new Integer("125")
+        state.currLux = testLux + 1
+        }
+    }
 
 void timeOffHandler()
 	{
