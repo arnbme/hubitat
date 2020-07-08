@@ -22,6 +22,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 08, 2020 v0.0.4 add optional Lux point for each globalLights
+ *						eliminate use of state fields
+ *						rewrite all on/off logic
  *  Jul 08, 2020 v0.0.3 Set state.currLux in hsmStatusHandler
  *						luxHandler clean up compare for On or Off, make it more understandable
  *  Jul 07, 2020 v0.0.2 Add Time input field and logic for lights off
@@ -47,7 +50,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.3";
+	return "0.0.4";
 	}
 
 def mainPage()
@@ -74,6 +77,8 @@ def mainPage()
 					input "global${it.id}Dim", "number", required: false, multiple: false, range: "1..100",
 						title: "${it.name} Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
 					}
+				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",
+					title: "${it.name} Lux On/Off point 1 to 8000, leave blank for app internal settings (Optional)"
 				input "global${it.id}Motion", "capability.motionSensor", required: false, multiple: false,
 					title: "${it.name} If this Motion Sensor is active, do not set light Off (Optional)"
 				}
@@ -84,7 +89,6 @@ def mainPage()
 def installed() {
     log.info "Installed with settings: ${settings}"
 	initialize()
-	state.currLux= new Integer("0")
 }
 
 def updated() {
@@ -105,7 +109,7 @@ def initialize()
 	else
 		{
 		subscribe(globalLuxSensors, "illuminance", luxHandler)
-		subscribe(location, "hsmStatus", hsmStatusHandler)
+		subscribe(location, "hsmStatus", luxHandler)
 		if (globalTimeOff)
 			schedule(globalTimeOff, timeOffHandler)
 		}
@@ -117,10 +121,9 @@ void logsOff(){
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
 
-def luxHandler(evt)
+def luxHandler(evt,forceOff=false)
 	{
-	def lastLux = state.currLux
-	if (settings.logDebugs) log.debug "luxLighting: luxHandler entered, lastLux: $lastLux ${lastLux.class.name}"
+	if (settings.logDebugs) log.debug "luxLighting: luxHandler entered"
 	def total = new Integer("0")
 	def currLux = new Integer("0")
 	def luxCount = new Integer("0")
@@ -134,17 +137,10 @@ def luxHandler(evt)
 	else
 		currLux = total
 	if (settings.logDebugs) log.debug "currLux: $currLux ${currLux.class.name}"
-	state.currLux = currLux
-	def testLux = new Integer("300")
+	def appTestLux = new Integer("300")
 	def mmdd = new Date().format( 'MMdd')	// mmdd is a text String, est accordingly
 	if (mmdd > '0430' && mmdd < '1001') 	// May 1 to Sep 30 use 125 lux due to leaves on trees
-		testLux = new Integer("125")
-
-	if (location.hsmStatus == 'armedNight')
-		{
-		state.currLux = testLux + 1
-		return
-		}
+		appTestLux = new Integer("125")
 
 //	def sunRiseSet = getSunriseAndSunset(sunriseOffset: +45, sunsetOffset: -45)
 //	if (settings.logDebugs) log.debug "sunRise+45 ${sunRiseSet.sunrise} sunSet-45 ${sunRiseSet.sunset} ${sunRiseSet.sunrise.class.name} now ${new Date()}"
@@ -153,74 +149,59 @@ def luxHandler(evt)
 //		if (settings.logDebugs) log.debug "Not between sunrise+45 and sunset-45 due to sunset rule"
 //		return
 //		}
-    if (settings.logDebugs) log.debug "currLux: $currLux lastLux: $lastLux testLux: $testLux"
-	if (currLux <= testLux)
-		{
-		if (lastLux > testLux)		//lights on
-			lightsOn()
-		}
-	else
-	if (lastLux <= testLux)			//lights off
-		lightsOff()
-	}
 
-void hsmStatusHandler(evt)
-	{
-//	HSM arming status changed
-	if (settings.logDebugs) log.debug  "luxLighting hsmStatusHandler entered Value: ${evt.value}"
-	if (evt.value=='disarmed')
-		luxHandler(evt)
-	else
-	if (evt.value == 'armedNight')
-        {
-        lightsOff()
-    	def testLux = new Integer("300")
-	    def mmdd = new Date().format( 'MMdd')	// mmdd is a text String, est accordingly
-	    if (mmdd > '0430' && mmdd < '1001') 	// May 1 to Sep 30 use 125 lux due to leaves on trees
-		    testLux = new Integer("125")
-        state.currLux = testLux + 1
-        }
-    }
+	def	settingDim=""
+	def	settingLux=""
+	def	settingMotion=""
+	globalLights.each
+		{
+		settingDim="global${it.id}Dim"
+		settingLux="global${it.id}Lux"
+		settingMotion="global${it.id}Motion"
+		if (settings."$settingLux")
+			testLux=settings."$settingLux"
+		else
+			testLux = appTestLux
+	    if (settings.logDebugs) log.debug "${it.name} currLux: $currLux testLux: $testLux forceOff: ${forceOff} hsmStatus: $location.hsmStatus"
+		if (it.currentValue('switch') == 'off')
+			{
+			if (location.hsmStatus == 'armedNight' || forceOff)
+				{
+				if (settings.logDebugs) log.debug "leaving ${it.name} Off"
+				}
+			else
+			if (testLux >= currLux)
+				{
+				if (settings."$settingDim")
+					{
+					if (settings.logDebugs) log.debug "doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
+					it.setLevel(settings."$settingDim", 5)
+					}
+				else
+					{
+					if (settings.logDebugs) log.debug "doing On ${it.name} ${it.id} ${settingDim} not found"
+					it.on()
+					}
+				}
+			}
+		else
+		if (testLux < currLux || location.hsmStatus == 'armedNight' || forceOff)		//bulb is on if we get here
+			{
+			if (settings."$settingMotion" && settings."$settingMotion".currentValue('motion') == 'active')
+				{
+				if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
+				}
+			else
+				{
+				if (settings.logDebugs) log.debug "doing off ${it.name} ${it.id}"
+				it.off()
+				}
+			}
+		}
+	}
 
 void timeOffHandler()
 	{
-//	Timed lights off, could be direct to lightsOff, but leave incase more logic is needed
 	if (settings.logDebugs) log.debug  "luxLighting timeOffHandler"
-	lightsOff()
-	}
-
-void lightsOn()
-	{
-	def settingName=""
-	globalLights.each
-		{
-		settingName="global${it.id}Dim"
-		if (settings."$settingName")
-			{
-			if (settings.logDebugs) log.debug "doing setlevel ${it.name} ${it.id} ${settingName}: " + settings."$settingName"
-			it.setLevel(settings."$settingName", 5)
-			}
-		else
-			{
-			if (settings.logDebugs) log.debug "doing on ${it.name} ${it.id} ${settingName} not found"
-			it.on()
-			}
-		}
-	}
-
-void lightsOff()
-	{
-	globalLights.each
-		{
-		settingName="global${it.id}Motion"
-		if (settings."$settingName" && settings."$settingName".currentValue('motion') == 'active')
-			{
-			if (settings.logDebugs) log.debug "leaving ${it.name} On"
-			}
-		else
-			{
-			if (settings.logDebugs) log.debug "doing off ${it.name} ${it.id} ${settingName}"
-			it.off()
-			}
-		}
+	luxHandler(true,true)
 	}
