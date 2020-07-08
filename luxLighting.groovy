@@ -86,18 +86,18 @@ def mainPage()
 		}
 	}
 
-def installed() {
+void installed() {
     log.info "Installed with settings: ${settings}"
 	initialize()
 }
 
-def updated() {
+void updated() {
     log.info "Updated with settings: ${settings}"
     unsubscribe()
     initialize()
 }
 
-def initialize()
+void initialize()
 	{
 	if(settings.logDebugs)
 		runIn(1800,logsOff)			//turns off debug logging after 30 min
@@ -121,7 +121,7 @@ void logsOff(){
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
 
-def luxHandler(evt,forceOff=false)
+void luxHandler(evt,forceOff=false)
 	{
 	if (settings.logDebugs) log.debug "luxLighting: luxHandler entered"
 	def total = new Integer("0")
