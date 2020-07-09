@@ -1,5 +1,5 @@
 /**
- *  Import Url:   https://raw.githubusercontent.com/arnbme/hubitat/master/luxLighting.groovy
+ *  Import Url:   https://raw.githubusercontent.com/arnbme/hubitat/master/motionSequencer.groovy
  *
  *  motionSequencer App
  *  Functions:
