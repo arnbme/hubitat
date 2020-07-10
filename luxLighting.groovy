@@ -22,6 +22,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 10, 2020 v0.0.7 Add subscribe to a switch, setting light on for 10 minutes
+ *							bool determines if Lux participates in light On decision, or switch forces On
+ * 							Use luxHandler to turn light off as needed
  *  Jul 10, 2020 v0.0.6 Add bool that determines if Lux participates in Motion On decision, or Motion forces light on
  *  Jul 09, 2020 v0.0.5 Add subscribe to a motion sensor turning light on for 10 minutes
  * 							Use luxHandler to turn light off as needed
@@ -53,7 +56,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.6";
+	return "0.0.7";
 	}
 
 def mainPage()
@@ -72,7 +75,7 @@ def mainPage()
 			input "globalLights", "capability.switch", required: true, multiple: true, submitOnChange: true,
 				title: "One or more Bulbs, Leds or Switches"
 
-//			for each globalLights get a brightness and optional motion sensor if active leave light on
+//			for each globalLights get a brightness and optional motion and switch sensors if active leave light on
 			globalLights.each
 				{
 				if (it.hasCommand('setLevel'))
@@ -88,6 +91,12 @@ def mainPage()
 				if (settings."$settingMotion")
 					input "global${it.id}MotionFlag", "bool", required: false, defaultValue: false,
 						title: "${it.name}<br />On/True: System or Device Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On<br />"
+				input "global${it.id}Switch", "capability.switch", required: false, multiple: false,submitOnChange: true,
+					title: "${it.name}<br />A Momentary Switch when set on sets light On for 10 Minutes(Optional)"
+				settingSwitch="global${it.id}Switch"
+				if (settings."$settingSwitch")
+					input "global${it.id}SwitchFlag", "bool", required: false, defaultValue: false,
+						title: "${it.name}<br />On/True: System or Device Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On<br />"
 				}
 			}
 		}
@@ -124,7 +133,12 @@ void initialize()
 			settingMotion="global${it.id}Motion"
 			if (settings."$settingMotion")
 				{
-				subscribe (settings."$settingMotion", "motion.active", motionHandler)
+				subscribe (settings."$settingMotion", "motion.active", deviceHandler)
+				}
+			settingSwitch="global${it.id}Switch"
+			if (settings."$settingSwitch")
+				{
+				subscribe (settings."$settingSwitch", "switch.on", deviceHandler)
 				}
 			}
 		}
@@ -230,24 +244,27 @@ void timeOffHandler()
 	luxHandler(true,true)
 	}
 
-void motionHandler(evt)
+void deviceHandler(evt)
 	{
-	def settingMotion=""
+	def settingDevice=""
 	def settingDim=""
-	def motionSensor = evt.getDevice()
-	if (settings.logDebugs) log.debug  "luxLighting motionHandler ${motionSensor.name} ${motionSensor.id}"
+	def deviceSensor = evt.getDevice()
+	def deviceText='Switch'
+	if (deviceSensor.hasCapability("MotionSensor"))
+		deviceText='Motion'
+	if (settings.logDebugs) log.debug  "luxLighting deviceHandler ${deviceSensor.name} ${deviceSensor.id} deviceText $deviceText"
 	globalLights.find
 		{
-		settingMotion="global${it.id}Motion"
-		settingMotionFlag="global${it.id}MotionFlag"
-		if (settings.logDebugs) log.debug "working with ${settingMotion}"
-		if (settings."$settingMotion")
+		settingDevice="global${it.id}${deviceText}"
+		settingDeviceFlag="global${it.id}${deviceText}Flag"
+		if (settings.logDebugs) log.debug "working with ${settingDevice}"
+		if (settings."$settingDevice")
 			{
-			if (settings.logDebugs) log.debug "motion occurred for light device ${it.name}"
-			runIn (600, lightOff, [data:it])		//turn off in 10 minutes from last motion, pass the device object
-			if (settings."$settingMotionFlag")
+			if (settings.logDebugs) log.debug "$deviceText occurred for light device ${it.name}"
+			runIn (600, lightOff, [data:it])		//turn off in 10 minutes from last activity, pass the device object
+			if (settings."$settingDeviceFlag")
 				{
-				if (settings.logDebugs) log.debug "motionFlag says use Lux lighting for ${it.name}"
+				if (settings.logDebugs) log.debug "deviceFlag says use Lux lighting for ${it.name}"
 				luxHandler(false,false,it.id)
 				}
 			else
@@ -255,12 +272,12 @@ void motionHandler(evt)
 				settingDim="global${it.id}Dim"
 				if (settings."$settingDim")
 					{
-					if (settings.logDebugs) log.debug "luxLighting motionHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
+					if (settings.logDebugs) log.debug "luxLighting deviceHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
 					it.setLevel(settings."$settingDim", 5)
 					}
 				else
 					{
-					if (settings.logDebugs) log.debug "luxLighting motionHandler doing On ${it.name} ${it.id} ${settingDim} not found"
+					if (settings.logDebugs) log.debug "luxLighting deviceHandler doing On ${it.name} ${it.id} ${settingDim} not found"
 					it.on()
 					}
 				return true
