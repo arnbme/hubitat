@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 10, 2020 v0.0.6 Add bool that determines if Lux participates in Motion On decision, or Motion forces light on
  *  Jul 09, 2020 v0.0.5 Add subscribe to a motion sensor turning light on for 10 minutes
  * 							Use luxHandler to turn light off as needed
  *  Jul 08, 2020 v0.0.4 add optional Lux point for each globalLights
@@ -52,7 +53,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.5";
+	return "0.0.6";
 	}
 
 def mainPage()
@@ -79,10 +80,14 @@ def mainPage()
 					input "global${it.id}Dim", "number", required: false, multiple: false, range: "1..100",
 						title: "${it.name}<br />Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
 					}
-				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",
+				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",submitOnChange: true,
 					title: "${it.name}<br />Lux On/Off point 1 to 8000, leave blank for app internal settings (Optional)"
-				input "global${it.id}Motion", "capability.motionSensor", required: false, multiple: false,
+				input "global${it.id}Motion", "capability.motionSensor", required: false, multiple: false,submitOnChange: true,
 					title: "${it.name}<br />A Motion Sensor when active sets light On for 10 Minutes, status used during Off decision (Optional)"
+				settingMotion="global${it.id}Motion"
+				if (settings."$settingMotion")
+					input "global${it.id}MotionFlag", "bool", required: false, defaultValue: false,
+						title: "${it.name}<br />On/True: System or Device Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On<br />"
 				}
 			}
 		}
@@ -119,7 +124,6 @@ void initialize()
 			settingMotion="global${it.id}Motion"
 			if (settings."$settingMotion")
 				{
-				log.debug "settings.${settingMotion} subscribed"
 				subscribe (settings."$settingMotion", "motion.active", motionHandler)
 				}
 			}
@@ -132,7 +136,7 @@ void logsOff(){
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
 
-void luxHandler(evt,forceOff=false)
+void luxHandler(evt,forceOff=false,onlyLight=false)
 	{
 	if (settings.logDebugs) log.debug "luxLighting: luxHandler entered"
 	def total = new Integer("0")
@@ -166,46 +170,55 @@ void luxHandler(evt,forceOff=false)
 	def	settingMotion=""
 	globalLights.each
 		{
-		settingDim="global${it.id}Dim"
-		settingLux="global${it.id}Lux"
-		settingMotion="global${it.id}Motion"
-		if (settings."$settingLux")
-			testLux=settings."$settingLux"
-		else
-			testLux = appTestLux
-	    if (settings.logDebugs) log.debug "${it.name} currLux: $currLux testLux: $testLux forceOff: ${forceOff} hsmStatus: $location.hsmStatus"
-		if (it.currentValue('switch') == 'off')
+		if (onlyLight && onlyLight != it.id) //dont process this light
 			{
-			if (location.hsmStatus == 'armedNight' || forceOff)
+			if (settings.logDebugs) log.debug "luxHandler ${it.name} skipped ${it.id} $onlyLight"
+			}
+		else
+			{
+			if (onlyLight)
+				if (settings.logDebugs) log.debug "luxHandler ${it.name} processing onlylight ${it.id}"
+			settingDim="global${it.id}Dim"
+			settingLux="global${it.id}Lux"
+			settingMotion="global${it.id}Motion"
+			if (settings."$settingLux")
+				testLux=settings."$settingLux"
+			else
+				testLux = appTestLux
+			if (settings.logDebugs) log.debug "${it.name} currLux: $currLux testLux: $testLux forceOff: ${forceOff} hsmStatus: $location.hsmStatus"
+			if (it.currentValue('switch') == 'off')
 				{
-				if (settings.logDebugs) log.debug "leaving ${it.name} Off"
+				if (location.hsmStatus == 'armedNight' || forceOff)
+					{
+					if (settings.logDebugs) log.debug "leaving ${it.name} Off"
+					}
+				else
+				if (testLux >= currLux)
+					{
+					if (settings."$settingDim")
+						{
+						if (settings.logDebugs) log.debug "doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
+						it.setLevel(settings."$settingDim", 5)
+						}
+					else
+						{
+						if (settings.logDebugs) log.debug "doing On ${it.name} ${it.id} ${settingDim} not found"
+						it.on()
+						}
+					}
 				}
 			else
-			if (testLux >= currLux)
+			if (testLux < currLux || location.hsmStatus == 'armedNight' || forceOff)		//bulb is on if we get here
 				{
-				if (settings."$settingDim")
+				if (settings."$settingMotion" && settings."$settingMotion".currentValue('motion') == 'active')
 					{
-					if (settings.logDebugs) log.debug "doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
-					it.setLevel(settings."$settingDim", 5)
+					if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
 					}
 				else
 					{
-					if (settings.logDebugs) log.debug "doing On ${it.name} ${it.id} ${settingDim} not found"
-					it.on()
+					if (settings.logDebugs) log.debug "doing off ${it.name} ${it.id}"
+					it.off()
 					}
-				}
-			}
-		else
-		if (testLux < currLux || location.hsmStatus == 'armedNight' || forceOff)		//bulb is on if we get here
-			{
-			if (settings."$settingMotion" && settings."$settingMotion".currentValue('motion') == 'active')
-				{
-				if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
-				}
-			else
-				{
-				if (settings.logDebugs) log.debug "doing off ${it.name} ${it.id}"
-				it.off()
 				}
 			}
 		}
@@ -226,23 +239,32 @@ void motionHandler(evt)
 	globalLights.find
 		{
 		settingMotion="global${it.id}Motion"
+		settingMotionFlag="global${it.id}MotionFlag"
 		if (settings.logDebugs) log.debug "working with ${settingMotion}"
 		if (settings."$settingMotion")
 			{
 			if (settings.logDebugs) log.debug "motion occurred for light device ${it.name}"
 			runIn (600, lightOff, [data:it])		//turn off in 10 minutes from last motion, pass the device object
-			settingDim="global${it.id}Dim"
-			if (settings."$settingDim")
+			if (settings."$settingMotionFlag")
 				{
-				if (settings.logDebugs) log.debug "luxLighting motionHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
-				it.setLevel(settings."$settingDim", 5)
+				if (settings.logDebugs) log.debug "motionFlag says use Lux lighting for ${it.name}"
+				luxHandler(false,false,it.id)
 				}
 			else
 				{
-				if (settings.logDebugs) log.debug "luxLighting motionHandler doing On ${it.name} ${it.id} ${settingDim} not found"
-				it.on()
+				settingDim="global${it.id}Dim"
+				if (settings."$settingDim")
+					{
+					if (settings.logDebugs) log.debug "luxLighting motionHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
+					it.setLevel(settings."$settingDim", 5)
+					}
+				else
+					{
+					if (settings.logDebugs) log.debug "luxLighting motionHandler doing On ${it.name} ${it.id} ${settingDim} not found"
+					it.on()
+					}
+				return true
 				}
-			return true
 			}
 		else
 			return false
@@ -251,22 +273,6 @@ void motionHandler(evt)
 
 void lightOff(dvcObj)
 	{
-//	cant use the object in Hubitat, so get the device from settings and use it
-	if (settings.logDebugs) log.debug  "luxLighting lightOff entered ${dvcObj.id} ${dvcObj.name}"
-//	dvcObj.off()			//wont work in Hubitat, security stuff
-/*	def dvcId=dvcObj.id		//deprecated this code but leaving it just in case I need something like this in future
-	globalLights.find
-		{
-		if (it.id==dvcId)
-			{
-			if (settings.logDebugs) log.debug "luxLighting lightOff turning Off device ${it.name}"
-			it.off()
-			return true
-			}
-		else
-			return false
-		}
-*/
-	luxHandler(true)		//light may or may not be turned off based on lux and system satus
+	if (settings.logDebugs) log.debug "luxLighting lightOff entered ${dvcObj.id} ${dvcObj.name}"
+	luxHandler(false,false,dvcObj.id)		//light may or may not be turned off based on lux and system satus
 	}
-
