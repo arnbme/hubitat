@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 09, 2020 v0.0.5 Add subscribe to a motion sensor turning light on for 10 minutes
+ * 							Use luxHandler to turn light off as needed
  *  Jul 08, 2020 v0.0.4 add optional Lux point for each globalLights
  *						eliminate use of state fields
  *						rewrite all on/off logic
@@ -50,7 +52,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.4";
+	return "0.0.5";
 	}
 
 def mainPage()
@@ -75,12 +77,12 @@ def mainPage()
 				if (it.hasCommand('setLevel'))
 					{
 					input "global${it.id}Dim", "number", required: false, multiple: false, range: "1..100",
-						title: "${it.name} Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
+						title: "${it.name}<br />Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
 					}
 				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",
-					title: "${it.name} Lux On/Off point 1 to 8000, leave blank for app internal settings (Optional)"
+					title: "${it.name}<br />Lux On/Off point 1 to 8000, leave blank for app internal settings (Optional)"
 				input "global${it.id}Motion", "capability.motionSensor", required: false, multiple: false,
-					title: "${it.name} If this Motion Sensor is active, do not set light Off (Optional)"
+					title: "${it.name}<br />A Motion Sensor when active sets light On for 10 Minutes, status used during Off decision (Optional)"
 				}
 			}
 		}
@@ -112,6 +114,15 @@ void initialize()
 		subscribe(location, "hsmStatus", luxHandler)
 		if (globalTimeOff)
 			schedule(globalTimeOff, timeOffHandler)
+		globalLights.each
+			{
+			settingMotion="global${it.id}Motion"
+			if (settings."$settingMotion")
+				{
+				log.debug "settings.${settingMotion} subscribed"
+				subscribe (settings."$settingMotion", "motion.active", motionHandler)
+				}
+			}
 		}
 	}
 
@@ -205,3 +216,57 @@ void timeOffHandler()
 	if (settings.logDebugs) log.debug  "luxLighting timeOffHandler"
 	luxHandler(true,true)
 	}
+
+void motionHandler(evt)
+	{
+	def settingMotion=""
+	def settingDim=""
+	def motionSensor = evt.getDevice()
+	if (settings.logDebugs) log.debug  "luxLighting motionHandler ${motionSensor.name} ${motionSensor.id}"
+	globalLights.find
+		{
+		settingMotion="global${it.id}Motion"
+		if (settings.logDebugs) log.debug "working with ${settingMotion}"
+		if (settings."$settingMotion")
+			{
+			if (settings.logDebugs) log.debug "motion occurred for light device ${it.name}"
+			runIn (600, lightOff, [data:it])		//turn off in 10 minutes from last motion, pass the device object
+			settingDim="global${it.id}Dim"
+			if (settings."$settingDim")
+				{
+				if (settings.logDebugs) log.debug "luxLighting motionHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
+				it.setLevel(settings."$settingDim", 5)
+				}
+			else
+				{
+				if (settings.logDebugs) log.debug "luxLighting motionHandler doing On ${it.name} ${it.id} ${settingDim} not found"
+				it.on()
+				}
+			return true
+			}
+		else
+			return false
+		}
+	}
+
+void lightOff(dvcObj)
+	{
+//	cant use the object in Hubitat, so get the device from settings and use it
+	if (settings.logDebugs) log.debug  "luxLighting lightOff entered ${dvcObj.id} ${dvcObj.name}"
+//	dvcObj.off()			//wont work in Hubitat, security stuff
+/*	def dvcId=dvcObj.id		//deprecated this code but leaving it just in case I need something like this in future
+	globalLights.find
+		{
+		if (it.id==dvcId)
+			{
+			if (settings.logDebugs) log.debug "luxLighting lightOff turning Off device ${it.name}"
+			it.off()
+			return true
+			}
+		else
+			return false
+		}
+*/
+	luxHandler(true)		//light may or may not be turned off based on lux and system satus
+	}
+
