@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 11, 2020 v0.0.8 Change base lux, date period and second Lux to input parameters vs hard coded
  *  Jul 10, 2020 v0.0.7 Add subscribe to a switch, setting light on for 10 minutes
  *							bool determines if Lux participates in light On decision, or switch forces On
  * 							Use luxHandler to turn light off as needed
@@ -69,6 +70,52 @@ def mainPage()
 				title: "Disable All Functions. Default: Off/False"
 			input "logDebugs", "bool", required: true, defaultValue: false,
 				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
+			input "globalTestLux", "number", required: true, multiple: false, range: "1..10000",
+				title: "Standard Lux point"
+			input "globalDateLux", "number", required: false, multiple: false, range: "1..10000",submitOnChange: true,
+				title: "Date based Lux point used between two dates (Optional) Date fields appear when entered."
+			if (globalDateLux)
+				{
+				input "globalFromMonth", "enum", required: true, width: 15,title: "Starting Month", submitOnChange: true,
+					options: ['January','February','March','April','May','June','July','August','September','October','November','December']
+				switch (globalFromMonth)
+					{
+					case ('April'):
+					case ('June'):
+					case ('September'):
+					case ('November'):
+						input "globalFromDate", "enum", required: true, width: 4, title: "Starting date",
+							options:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,35,26,27,28,29,30]
+					break
+					case ('February'):
+						input "globalFromDate", "enum", required: true, width: 4, title: "Starting date",
+							options:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,35,26,27,28]
+					break
+					default:
+						input "globalFromDate", "enum", required: true, width: 4, title: "Starting date",
+							options:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,35,26,27,28,29,30,31]
+					}
+				paragraph ""
+				input "globalToMonth", "enum", required: true, width: 15, title: "Ending Month", submitOnChange: true,
+					options: ['January','February','March','April','May','June','July','August','September','October','November','December']
+				switch (globalToMonth)
+					{
+					case ('April'):
+					case ('June'):
+					case ('September'):
+					case ('November'):
+						input "globalToDate", "enum", required: true, width: 4, title: "Ending date",
+							options:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,35,26,27,28,29,30]
+					break
+					case ('February'):
+						input "globalToDate", "enum", required: true,width:4, title: "Ending date",
+							options:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,35,26,27,28]
+					break
+					default:
+						input "globalTodate", "enum", required: true,width: 4, title: "Ending date",
+							options:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,35,26,27,28,29,30,31]
+					}
+				}
 			input "globalLuxSensors", "capability.illuminanceMeasurement", required: true, multiple: true,
 				title: "Lux sensors. When more than one, the average lux value is used"
 			input "globalTimeOff", "time", title: "Optional: Turn off lighting devices at this time daily. Leave blank to ignore", required: false
@@ -124,6 +171,35 @@ void initialize()
 		{}
 	else
 		{
+//		Create two program defined globals for start and end Lux date
+		if (globalDateLux)
+			{
+			Map months = [January: '01',
+			February: '02',
+			March: '03',
+			April: '04',
+			May: '05',
+			June: '06',
+			July: '07',
+			August: '08',
+			September: '09',
+			October: '10',
+			November: '11',
+			December: '12']
+			def beginMMDD=""
+			def endMMDD=""
+			if (globalFromDate < '10')
+				beginMMDD = months[globalFromMonth] + '0' + globalFromDate as String
+			else
+				beginMMDD= months[globalFromMonth]+globalFromDate as String
+			if (globalToDate < '10')
+				endMMDD = months[globalToMonth] + '0' + globalToDate as String
+			else
+				endMMDD= months[globalToMonth]+globalToDate as String
+			app.updateSetting("globalFromMMDD",[value: beginMMDD,type:"string"])
+			app.updateSetting("globalToMMDD",[value: endMMDD, type:"string"])
+			}
+
 		subscribe(globalLuxSensors, "illuminance", luxHandler)
 		subscribe(location, "hsmStatus", luxHandler)
 		if (globalTimeOff)
@@ -166,10 +242,30 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 	else
 		currLux = total
 	if (settings.logDebugs) log.debug "currLux: $currLux ${currLux.class.name}"
-	def appTestLux = new Integer("300")
-	def mmdd = new Date().format( 'MMdd')	// mmdd is a text String, est accordingly
-	if (mmdd > '0430' && mmdd < '1001') 	// May 1 to Sep 30 use 125 lux due to leaves on trees
-		appTestLux = new Integer("125")
+	def appTestLux = globalTestLux  as Integer
+	if (globalDateLux)
+		{
+		def mmdd = new Date().format( 'MMdd')	// mmdd is a text String, test accordingly
+		if (settings.logDebugs) log.debug "luxHandler testing date $mmdd $globalFromMMDD and $globalToMMDD using globalDateLux: $globalDateLux"
+//		log.debug "luxHandler ${mmdd.class.name} ${globalFromMMDD.class.name} ${globalToMMDD.class.name}"
+		if (globalToMMDD >= globalFromMMDD)
+			{
+			if (mmdd >= globalFromMMDD && mmdd <= globalToMMDD)
+				{
+				if (settings.logDebugs) log.debug "luxHandler $mmdd is between $globalFromMMDD and $globalToMMDD using globalDateLux: $globalDateLux"
+				appTestLux  = globalDateLux as Integer
+				}
+			}
+		else
+		if (mmdd >= globalToMMDD && mmdd <= globalFromMMDD)
+			{}
+		else
+			{
+			if (settings.logDebugs) log.debug "luxHandler $mmdd is between $globalFromMMDD and $globalToMMDD using globalDateLux: $globalDateLux"
+			appTestLux = globalDateLux as Integer
+			}
+		}
+	if (settings.logDebugs) log.debug "currLux: $currLux ${currLux.class.name} appTestLux: $appTestLux ${appTestLux.class.name}"
 
 //	def sunRiseSet = getSunriseAndSunset(sunriseOffset: +45, sunsetOffset: -45)
 //	if (settings.logDebugs) log.debug "sunRise+45 ${sunRiseSet.sunrise} sunSet-45 ${sunRiseSet.sunset} ${sunRiseSet.sunrise.class.name} now ${new Date()}"
