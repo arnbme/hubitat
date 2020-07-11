@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 11, 2020 v0.0.9 Issue office light turning off before 10 minutes and no motion
+ *						Add routine getEvents to insure light stays on 10 minutes
  *  Jul 11, 2020 v0.0.8 Change base lux, date period and second Lux to input parameters vs hard coded
  *  Jul 10, 2020 v0.0.7 Add subscribe to a switch, setting light on for 10 minutes
  *							bool determines if Lux participates in light On decision, or switch forces On
@@ -57,7 +59,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.7";
+	return "0.0.9";
 	}
 
 def mainPage()
@@ -218,6 +220,8 @@ void initialize()
 				}
 			}
 		}
+//	log.debug "getevents returned " + getEvents('global1288Motion','active')  	//used to test getEvents on Done
+//	log.debug "getevents returned " + getEvents('global321Switch','on')  		//used to test getEvents on Done
 	}
 
 void logsOff(){
@@ -320,7 +324,8 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 			else
 			if (testLux < currLux || location.hsmStatus == 'armedNight' || forceOff)		//bulb is on if we get here
 				{
-				if (settings."$settingMotion" && settings."$settingMotion".currentValue('motion') == 'active')
+				if (settings."$settingMotion" &&
+					(settings."$settingMotion".currentValue('motion') == 'active' || getEvents(settingMotion,'active')))
 					{
 					if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
 					}
@@ -388,4 +393,37 @@ void lightOff(dvcObj)
 	{
 	if (settings.logDebugs) log.debug "luxLighting lightOff entered ${dvcObj.id} ${dvcObj.name}"
 	luxHandler(false,false,dvcObj.id)		//light may or may not be turned off based on lux and system satus
+	}
+
+def getEvents(settingDevice,deviceValue)
+	{
+	if (settings."$settingDevice")
+		{
+		if (settings.logDebugs) log.debug "getEvents entered ${settingDevice}"
+		def events = settings."$settingDevice".events(max: 10)
+		returnValue=false
+		events.find
+			{
+			if (it.value == deviceValue)
+				{
+				if ((now() - it.date.getTime()) < 600001)		//less than ten minutes in milliseconds?
+					{
+					if (settings.logDebugs) log.debug "getEvents less than 10 minutes " + (now() - it.date.getTime())
+					returnValue=true
+					}
+				else
+					{
+					if (settings.logDebugs) log.debug "getEvents more than 10 minutes " + (now() - it.date.getTime())
+					}
+				return true
+				}
+			else
+				{
+				if (settings.logDebugs) log.debug "getEvents not an active event ${it.value}"
+				return false
+				}
+			}
+		}
+	if (settings.logDebugs) log.debug "getEvents return value is $returnValue"
+	return returnValue
 	}
