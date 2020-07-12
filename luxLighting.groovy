@@ -24,6 +24,7 @@
  *
  *  Jul 11, 2020 v0.0.9 Issue office light turning off before 10 minutes and no motion
  *						Add routine getEvents to insure light stays on 10 minutes
+ *						use overwrite:false on runIn for Motion and Switch turning light on
  *  Jul 11, 2020 v0.0.8 Change base lux, date period and second Lux to input parameters vs hard coded
  *  Jul 10, 2020 v0.0.7 Add subscribe to a switch, setting light on for 10 minutes
  *							bool determines if Lux participates in light On decision, or switch forces On
@@ -362,7 +363,7 @@ void deviceHandler(evt)
 		if (settings."$settingDevice")
 			{
 			if (settings.logDebugs) log.debug "$deviceText occurred for light device ${it.name}"
-			runIn (600, lightOff, [data:it])		//turn off in 10 minutes from last activity, pass the device object
+			runIn (600, lightOff, [data: it, overwrite: false])		//turn off in 10 minutes from last activity, pass the device object
 			if (settings."$settingDeviceFlag")
 				{
 				if (settings.logDebugs) log.debug "deviceFlag says use Lux lighting for ${it.name}"
