@@ -25,6 +25,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 11, 2020 v0.0.1 False Trigger. Fix: set all state times when set to night mode
+ *						trigger disabled for testing enable when going live
  *  Jul 09, 2020 v0.0.0 Create
  */
 
@@ -45,7 +47,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.0";
+	return "0.0.1";
 	}
 
 def mainPage()
@@ -96,16 +98,16 @@ void initialize()
 		}
 	else
 		{
+		state.hall=now()
+		state.living=now()
+		state.dining=now()
+		state.office=now()
 		subscribe(globalHallMotion, "motion.active", motionHallHandler)
 		subscribe(globalLivingRoomMotion, "motion.active", motionLivingRoomHandler)
 		subscribe(globalDiningRoomMotion, "motion.active", motionDiningRoomHandler)
 		subscribe(globalOfficeMotion, "motion.active", motionOfficeHandler)
 		}
 	subscribe(location, "hsmStatus", hsmStatusHandler)
-	if (!state?.hall) state.hall=now()-86400000
-	if (!state?.living) state.living=now()-86400000
-	if (!state?.dining) state.dining=now()-86400000
-	if (!state?.office) state.office=now()-86400000
 	}
 
 void logsOff(){
