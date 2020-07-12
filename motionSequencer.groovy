@@ -26,7 +26,6 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *  Jul 11, 2020 v0.0.1 False Trigger. Fix: set all state times when set to night mode
- *						trigger disabled for testing enable when going live
  *  Jul 09, 2020 v0.0.0 Create
  */
 
