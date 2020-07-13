@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 13, 2020 v0.1.0 in luxHandler set luxCount to globalLuxSensors.size() vs counting in each loop
+ *                      in deviceHandler: when light already On don't turn on again
  *  Jul 11, 2020 v0.0.9 Issue office light turning off before 10 minutes and no motion
  *						Add routine getEvents to insure light stays on 10 minutes
  *						use overwrite:false on runIn for Motion and Switch turning light on
@@ -60,7 +62,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.9";
+	return "0.1.0";
 	}
 
 def mainPage()
@@ -236,10 +238,9 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 	if (settings.logDebugs) log.debug "luxLighting: luxHandler entered"
 	def total = new Integer("0")
 	def currLux = new Integer("0")
-	def luxCount = new Integer("0")
+	def luxCount = settings.globalLuxSensors.size()		//This is an integer field
 	globalLuxSensors.each
 		{
-		luxCount++
 		total+=it.currentValue('illuminance').intValueExact()
 		}
 	if (luxCount>1)
@@ -364,6 +365,9 @@ void deviceHandler(evt)
 			{
 			if (settings.logDebugs) log.debug "$deviceText occurred for light device ${it.name}"
 			runIn (600, lightOff, [data: it, overwrite: false])		//turn off in 10 minutes from last activity, pass the device object
+			if (it.currentValue('switch') == 'on')					//already On nothing to do here
+				{}
+			else
 			if (settings."$settingDeviceFlag")
 				{
 				if (settings.logDebugs) log.debug "deviceFlag says use Lux lighting for ${it.name}"
