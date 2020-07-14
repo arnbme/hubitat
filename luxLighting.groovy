@@ -22,6 +22,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 14, 2020 v0.1.2 Add Manually coded Qnnn methods for each globalLights. Eliminates overhead from using runIn overwrite: true
+ *							WARNING must manually add some simple code for best perfformance
+ *							Change runIn to pass it.id only, not the huge full object that Hubitat wont use for commands
  *  Jul 13, 2020 v0.1.1 Change light on duration when motion or switch triggered an input setting
  *  					in getEvents fix returnValue not defined
  *  Jul 13, 2020 v0.1.0 in luxHandler set luxCount to globalLuxSensors.size() vs counting in each loop
@@ -231,7 +234,21 @@ void initialize()
 				{
 				subscribe (settings."$settingSwitch", "switch.on", deviceHandler)
 				}
-			}
+
+//			This code may be used to test the Qnames tto verify they work and exist
+/*			if ((settings."$settingMotion" ) || (settings."$settingSwitch"))
+				{
+				qName="Q${it.id}"
+				try {
+					log.debug "trying $qName"
+					"${qName}"()
+					}
+				catch (e)
+					{
+					log.debug "Execution failed ${e}"
+					}
+				}
+*/			}
 		}
 //	log.debug "getevents returned " + getEvents('global1288Motion','active')  	//used to test getEvents on Done
 //	log.debug "getevents returned " + getEvents('global321Switch','on')  		//used to test getEvents on Done
@@ -369,11 +386,13 @@ void deviceHandler(evt)
 	def settingDim=""
 	def deviceSensor = evt.getDevice()
 	def deviceText='Switch'
+	def qName=''
 	if (deviceSensor.hasCapability("MotionSensor"))
 		deviceText='Motion'
 	if (settings.logDebugs) log.debug  "luxLighting deviceHandler ${deviceSensor.name} ${deviceSensor.id} deviceText $deviceText"
 	globalLights.find
 		{
+		qName="Q${it.id}"
 		settingDevice="global${it.id}${deviceText}"
 		settingDeviceFlag="global${it.id}${deviceText}Flag"
 		if (settings.logDebugs) log.debug "working with ${settingDevice}"
@@ -384,7 +403,16 @@ void deviceHandler(evt)
 			minutes=settings."$settingDeviceMinutes"
 			if (settings.logDebugs)log.debug "it.name on minutes is ${minutes}"
 			seconds=minutes * 60
-			runIn (seconds, lightOff, [data: it, overwrite: false])		//turn off in setting minutes from last activity, pass the device object
+			try {
+				if (settings.logDebugs) log.debug "luxLighting deviceHandler: test if $qName exists as a method"
+				"${qName}"()								//When method exists queue it to the method
+				runIn (seconds, "${qName}", [data: it.id])		//turn off in setting minutes from last activity, pass the device Id
+				}
+			catch (e)
+				{
+				log.warn "luxLighting deviceHandler: Using default runIn queue, please code $qName method"
+				runIn (seconds, lightOff, [data: it.id, overwrite: false])		//turn off in setting minutes from last activity, pass the device id
+				}
 			if (it.currentValue('switch') == 'on')					//already On nothing to do here
 				{}
 			else
@@ -412,12 +440,6 @@ void deviceHandler(evt)
 		else
 			return false
 		}
-	}
-
-void lightOff(dvcObj)
-	{
-	if (settings.logDebugs) log.debug "luxLighting lightOff entered ${dvcObj.id} ${dvcObj.name}"
-	luxHandler(false,false,dvcObj.id)		//light may or may not be turned off based on lux and system satus
 	}
 
 def getEvents(settingDevice,deviceValue,minutes)
@@ -453,4 +475,38 @@ def getEvents(settingDevice,deviceValue,minutes)
 		}
 	if (settings.logDebugs) log.debug "getEvents return value is $returnValue"
 	return returnValue
+	}
+
+/* standard runIn queue when device Queue method not coded
+void lightOff(dvcId)
+	{
+	if (settings.logDebugs) log.debug "luxLighting lightOff entered ${dvcId.id} ${dvcId.name}"
+	luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	}
+
+/*
+ * runIn queues eliminate overwrite: false reducing overhead for busy switch or motion sensor
+ * The following Qnnnn routines are manually coded until I figure out how to generate them wih a Groovy Macro
+ * They purpose is to allow the device runIn to work with overwrite true eliminating extra timeout processing
+ * user should code one per globalLights defined device.id with a related switch or motion sensor
+ */
+void Q1288(dvcIdj=false)
+	{
+	if (settings.logDebugs) log.debug "luxLighting Q1288 entered ${dvcId}"
+	if (dvcId)
+		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	}
+
+void Q1281(dvcId=false)
+	{
+	if (settings.logDebugs) log.debug "luxLighting Q1281 entered ${dvcId}"
+	if (dvcId)
+		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	}
+
+void Q321(dvcId=false)
+	{
+	if (settings.logDebugs) log.debug "luxLighting Q321 entered ${dvcId}"
+	if (dvcId)
+		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
 	}
