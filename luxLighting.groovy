@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 13, 2020 v0.1.1 in getEvents fix returnValue not defined
  *  Jul 13, 2020 v0.1.0 in luxHandler set luxCount to globalLuxSensors.size() vs counting in each loop
  *                      in deviceHandler: when light already On don't turn on again
  *  Jul 11, 2020 v0.0.9 Issue office light turning off before 10 minutes and no motion
@@ -402,11 +403,11 @@ void lightOff(dvcObj)
 
 def getEvents(settingDevice,deviceValue)
 	{
+	def	returnValue=false
 	if (settings."$settingDevice")
 		{
 		if (settings.logDebugs) log.debug "getEvents entered ${settingDevice}"
 		def events = settings."$settingDevice".events(max: 10)
-		returnValue=false
 		events.find
 			{
 			if (it.value == deviceValue)
