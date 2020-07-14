@@ -22,7 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
- *  Jul 13, 2020 v0.1.1 in getEvents fix returnValue not defined
+ *  Jul 13, 2020 v0.1.1 Change light on duration when motion or switch triggered an input setting
+ *  					in getEvents fix returnValue not defined
  *  Jul 13, 2020 v0.1.0 in luxHandler set luxCount to globalLuxSensors.size() vs counting in each loop
  *                      in deviceHandler: when light already On don't turn on again
  *  Jul 11, 2020 v0.0.9 Issue office light turning off before 10 minutes and no motion
@@ -139,17 +140,25 @@ def mainPage()
 				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",submitOnChange: true,
 					title: "${it.name}<br />Lux On/Off point 1 to 8000, leave blank for app internal settings (Optional)"
 				input "global${it.id}Motion", "capability.motionSensor", required: false, multiple: false,submitOnChange: true,
-					title: "${it.name}<br />A Motion Sensor when active sets light On for 10 Minutes, status used during Off decision (Optional)"
+					title: "${it.name}<br />A Motion Sensor when active sets light On, status used during Off decision (Optional)"
 				settingMotion="global${it.id}Motion"
 				if (settings."$settingMotion")
+					{
+					input "global${it.id}MotionMinutes", "number", required: rue, defaultValue: 10, range: "1..240",
+						title: "${it.name}<br />Minutes to remain On"
 					input "global${it.id}MotionFlag", "bool", required: false, defaultValue: false,
 						title: "${it.name}<br />On/True: System or Device Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On<br />"
+					}
 				input "global${it.id}Switch", "capability.switch", required: false, multiple: false,submitOnChange: true,
-					title: "${it.name}<br />A Momentary Switch when set on sets light On for 10 Minutes(Optional)"
+					title: "${it.name}<br />A Momentary Switch when set on sets light On(Optional)"
 				settingSwitch="global${it.id}Switch"
 				if (settings."$settingSwitch")
+					{
+					input "global${it.id}SwitchMinutes", "number", required: rue, defaultValue: 10, range: "1..240",
+						title: "${it.name}<br />Minutes to remain On"
 					input "global${it.id}SwitchFlag", "bool", required: false, defaultValue: false,
 						title: "${it.name}<br />On/True: System or Device Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On<br />"
+					}
 				}
 			}
 		}
@@ -285,6 +294,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 	def	settingDim=""
 	def	settingLux=""
 	def	settingMotion=""
+	def	settingMotionMinutes=""
 	globalLights.each
 		{
 		if (onlyLight && onlyLight != it.id) //dont process this light
@@ -298,6 +308,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 			settingDim="global${it.id}Dim"
 			settingLux="global${it.id}Lux"
 			settingMotion="global${it.id}Motion"
+			settingMotionMinutes="global${it.id}MotionMinutes"
 			if (settings."$settingLux")
 				testLux=settings."$settingLux"
 			else
@@ -327,8 +338,12 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 			else
 			if (testLux < currLux || location.hsmStatus == 'armedNight' || forceOff)		//bulb is on if we get here
 				{
+				def minutes = new Integer ("0")
+				if (settings."$settingMotionMinutes")
+					minutes=settings."$settingMotionMinutes"
 				if (settings."$settingMotion" &&
-					(settings."$settingMotion".currentValue('motion') == 'active' || getEvents(settingMotion,'active')))
+					(settings."$settingMotion".currentValue('motion') == 'active' ||
+					(minutes > 0 && getEvents(settingMotion,'active', minutes))))
 					{
 					if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
 					}
@@ -365,7 +380,11 @@ void deviceHandler(evt)
 		if (settings."$settingDevice")
 			{
 			if (settings.logDebugs) log.debug "$deviceText occurred for light device ${it.name}"
-			runIn (600, lightOff, [data: it, overwrite: false])		//turn off in 10 minutes from last activity, pass the device object
+			settingDeviceMinutes="global${it.id}${deviceText}Minutes"
+			minutes=settings."$settingDeviceMinutes"
+			if (settings.logDebugs)log.debug "it.name on minutes is ${minutes}"
+			seconds=minutes * 60
+			runIn (seconds, lightOff, [data: it, overwrite: false])		//turn off in setting minutes from last activity, pass the device object
 			if (it.currentValue('switch') == 'on')					//already On nothing to do here
 				{}
 			else
@@ -401,8 +420,9 @@ void lightOff(dvcObj)
 	luxHandler(false,false,dvcObj.id)		//light may or may not be turned off based on lux and system satus
 	}
 
-def getEvents(settingDevice,deviceValue)
+def getEvents(settingDevice,deviceValue,minutes)
 	{
+	if (settings.logDebugs) log.debug "LuxLighing getEvents entered, Device: $settingDevice deviceValue: $deviceValue Minutes: $minutes"
 	def	returnValue=false
 	if (settings."$settingDevice")
 		{
@@ -412,7 +432,8 @@ def getEvents(settingDevice,deviceValue)
 			{
 			if (it.value == deviceValue)
 				{
-				if ((now() - it.date.getTime()) < 600001)		//less than ten minutes in milliseconds?
+				millisec= (minutes * 60000) + 1
+				if ((now() - it.date.getTime()) < millisec)		//less than time on minutes in milliseconds?
 					{
 					if (settings.logDebugs) log.debug "getEvents less than 10 minutes " + (now() - it.date.getTime())
 					returnValue=true
