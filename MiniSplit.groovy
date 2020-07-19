@@ -70,6 +70,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 19, 2020 v0.1.0 Add optional user coolplus dry and fan offsets overriding hysterisis
+ *  Jul 14, 2020 v0.0.9T Occasional error on transmission. Use a 125ms delay between all device commands vs issue all 5 at once
+ *  Jul 05, 2020 v0.0.9 confirm all ccalculation fields are BigDecimal, adjust AC ir cooling codes
  *  Jun 30, 2020 v0.0.8 Fix BigDecimal problem calculating dryPoint and fanPoint
  *  Jun 30, 2020 v0.0.7 Add bool for standard cooling or extended cooling logic
  *							standard Cool mode directly controlled by thermostat
@@ -110,7 +113,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.8";
+	return "0.0.9";
 	}
 
 def mainPage()
@@ -125,6 +128,10 @@ def mainPage()
 				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
 			input "globalMyCool", "bool", required: true, defaultValue: false,
 				title: "ON: Uses app's extended cooling logic with Fan, Dry and Cool points.<br />OFF: Follows Thermostat's cooling and idle state. Default: Off/False"
+ 			input name: "globalDryOffset", type: "decimal", required: false, range: "0.1..2.0",
+ 					title: "MyCool Dry Offset from Cool Set Point, may be specified in tenths. Optional, when not defined thermostat hysteris is used"
+ 			input name: "globalFanOffset", type: "decimal", required: false, range: "0.1..2.0",
+ 					title: "MyCool Fan Offset from Dry point, may be specified in tenths. Optional, when not defined thermostat hysteris is used"
 			input "globalThermostat", "capability.thermostat", required: true, multiple: false,
 				title: "A Thermostat that controls the Mini splits"
 			input "globalIrBlasters", "capability.actuator", required: true, multiple: true,
@@ -244,41 +251,35 @@ def thermostatModeHandler(evt)
 		case 'cool':
 			if (settings.globalMyCool)
 				{
+//				all fields should be BigDecimal
 				def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
-				def coolSetPointBD = new BigDecimal(coolSetPoint)
 				def hysteresis = globalThermostat.currentValue("hysteresis") as BigDecimal
-				def dryPoint=coolSetPointBD - hysteresis
+				def dryPoint=coolSetPoint - hysteresis
+				if (settings.globalDryOffset)
+					dryPoint=coolSetPoint - settings.globalDryOffset
 				def fanPoint=dryPoint - hysteresis
+				if (settings.globalFanOffset)
+					fanPoint=coolSetPoint - settings.globalFanOffset
 				def temperature=globalThermostat.currentValue("temperature") as BigDecimal
-				if (settings.logDebugs) log.debug "coolSetPointBD: $coolSetPointBD hysteresis: $hysteresis dryPoint: $dryPoint fanPoint: $fanPoint temperature: $temperature"
-
-	/*			had lots of trouble with BigDecimal compares and setting fields, had to use compareTo
-				but fixed as of V008 using new BigDecimal on CoolSetPointBD. it was a learning experience
-				res = temperature.compareTo(coolSetPointBD)
-				log.debug "res; $res"
-				res = 0 "Both values are equal ";
-				res = 1 "First Value is greater ";
-				res = -1 "Second value is greater";
-	*/
-//				if (temperature.compareTo(coolSetPointBD) != -1)
-				if (temperature>=coolSetPointBD)
+				if (settings.logDebugs) log.debug "coolSetPoint: $coolSetPoint ${coolSetPoint.class.name} hysteresis: $hysteresis ${hysteresis.class.name} dryPoint: $dryPoint fanPoint: $fanPoint ${dryPoint.class.name} temperature: $temperature ${temperature.class.name}"
+				if (temperature>=coolSetPoint)
 					{
 					if (coolSetPoint < 72) irCode='AC On2169'
 					else
-					if (coolSetPoint < 74) irCode='AC On2169'
+					if (coolSetPoint < 74) irCode='AC On2271'
 					else
-					if (coolSetPoint < 76) irCode='AC On2271'
+					if (coolSetPoint < 76) irCode='AC On2373'
 					else
-					if (coolSetPoint < 78) irCode='AC On2373'
+					if (coolSetPoint < 78) irCode='AC On2475'
 					else
-						irCode='AC On2475'
+					if (coolSetPoint < 80) irCode='AC On2577'
+					else
+						irCode='AC On2579'
 					}
 				else
-//				if (temperature.compareTo(dryPoint) != -1)
 				if (temperature>=dryPoint)
 					irCode='ACDry74Swing'
 				else
-//				if (temperature.compareTo(fanPoint) != -1)
 				if (temperature>=fanPoint)
 					irCode='ACFanSwing'
 				else
@@ -297,7 +298,9 @@ def thermostatModeHandler(evt)
 					else
 					if (coolSetPoint < 78) irCode='AC On2475'
 					else
-						irCode='AC On2577'
+					if (coolSetPoint < 80) irCode='AC On2577'
+					else
+						irCode='AC On2579'
 					}
 				else
 					irCode='AC Off'
@@ -340,7 +343,12 @@ def thermostatModeHandler(evt)
 	if (settings.logDebugs) log.debug  "thermostatModeHandler irCode: $irCode Prior irCode: ${state.priorIrCode}"
 	if (irCode != state?.priorIrCode)
 		{
-		globalIrBlasters.SendStoredCode(irCode)
+//		globalIrBlasters.SendStoredCode(irCode)
+		globalIrBlasters.each
+			{
+			it.SendStoredCode(irCode)
+			pauseExecution(200)
+			}
 		state.priorIrCode=irCode
 		if (irCode=='ACDry74Swing')
 			globalThermostat.setThermostatFanMode('dry')
