@@ -60,7 +60,7 @@
  */
 
 definition(
-    name: "deluxLighting2",
+    name: "deluxLighting",
     namespace: "arnbme",
     author: "Arn Burkhoff",
     description: "(${version()}) Delux Lighting app",
