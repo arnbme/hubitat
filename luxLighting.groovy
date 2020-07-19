@@ -1,4 +1,5 @@
 /**
+	D E P R E C A T E D BY deluxLighting module
  *  Import Url:   https://raw.githubusercontent.com/arnbme/hubitat/master/luxLighting.groovy
  *
  *  luxLighting App
