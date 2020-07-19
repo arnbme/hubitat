@@ -71,6 +71,7 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *  Jul 19, 2020 v0.1.0 Add optional user coolplus dry and fan offsets overriding hysterisis
+ *						Display MyCool set points or Dry and Fan
  *  Jul 14, 2020 v0.0.9T Occasional error on transmission. Use a 125ms delay between all device commands vs issue all 5 at once
  *  Jul 05, 2020 v0.0.9 confirm all ccalculation fields are BigDecimal, adjust AC ir cooling codes
  *  Jun 30, 2020 v0.0.8 Fix BigDecimal problem calculating dryPoint and fanPoint
@@ -113,12 +114,12 @@ preferences {
 
 def version()
 	{
-	return "0.0.9";
+	return "0.1.0";
 	}
 
 def mainPage()
 	{
-	dynamicPage(name: "main", title: "Mini Split Settings", install: true, uninstall: true)
+	dynamicPage(name: "mainPage", title: "Mini Split Settings", install: true, uninstall: true)
 		{
 		section
 			{
@@ -126,14 +127,26 @@ def mainPage()
 				title: "Disable All Functions. Default: Off/False"
 			input "logDebugs", "bool", required: true, defaultValue: false,
 				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
+			input "globalThermostat", "capability.thermostat", required: true, multiple: false, submitOnChange: true,
+				title: "A Thermostat that controls the Mini splits"
 			input "globalMyCool", "bool", required: true, defaultValue: false,
 				title: "ON: Uses app's extended cooling logic with Fan, Dry and Cool points.<br />OFF: Follows Thermostat's cooling and idle state. Default: Off/False"
- 			input name: "globalDryOffset", type: "decimal", required: false, range: "0.1..2.0",
+ 			input name: "globalDryOffset", type: "decimal", required: false, range: "0.1..2.0",  submitOnChange: true,
  					title: "MyCool Dry Offset from Cool Set Point, may be specified in tenths. Optional, when not defined thermostat hysteris is used"
- 			input name: "globalFanOffset", type: "decimal", required: false, range: "0.1..2.0",
+ 			input name: "globalFanOffset", type: "decimal", required: false, range: "0.1..2.0",  submitOnChange: true,
  					title: "MyCool Fan Offset from Dry point, may be specified in tenths. Optional, when not defined thermostat hysteris is used"
-			input "globalThermostat", "capability.thermostat", required: true, multiple: false,
-				title: "A Thermostat that controls the Mini splits"
+			if (settings.globalThermostat)
+				{
+				def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
+				def hysteresis = globalThermostat.currentValue("hysteresis") as BigDecimal
+				def dryPoint=coolSetPoint - hysteresis
+				if (settings.globalDryOffset)
+					dryPoint=coolSetPoint - settings.globalDryOffset
+				def fanPoint=dryPoint - hysteresis
+				if (settings.globalFanOffset)
+					fanPoint=dryPoint - settings.globalFanOffset
+				paragraph "MyCool settings Hysteresis:$hysteresis, coolSetpoint:$coolSetPoint, dryPoint:$dryPoint, fanPoint:$fanPoint"
+				}
 			input "globalIrBlasters", "capability.actuator", required: true, multiple: true,
 				title: "One or More IR Blasters"
 			}
@@ -259,7 +272,7 @@ def thermostatModeHandler(evt)
 					dryPoint=coolSetPoint - settings.globalDryOffset
 				def fanPoint=dryPoint - hysteresis
 				if (settings.globalFanOffset)
-					fanPoint=coolSetPoint - settings.globalFanOffset
+					fanPoint=dryPoint - settings.globalFanOffset
 				def temperature=globalThermostat.currentValue("temperature") as BigDecimal
 				if (settings.logDebugs) log.debug "coolSetPoint: $coolSetPoint ${coolSetPoint.class.name} hysteresis: $hysteresis ${hysteresis.class.name} dryPoint: $dryPoint fanPoint: $fanPoint ${dryPoint.class.name} temperature: $temperature ${temperature.class.name}"
 				if (temperature>=coolSetPoint)
