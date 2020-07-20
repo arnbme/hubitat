@@ -1,13 +1,10 @@
 /**
-	Work in progress!
-	ADD CODE FOR MULTIPLE MOTION AND DEVICE SENSORS CONTROLLING A LIGHT
-	ADD LOGIC FOR LIGHT OFF NOT USING LUXhANLER OR NOT
  *  Import Url:   https://raw.githubusercontent.com/arnbme/hubitat/master/deluxLighting.groovy
  *
  *  deluxLighting App
  *  Functions:
  *
- *		1. Turn lights on and off based on illumination (Lux), HSM armstate, time of day
+ *		1. Turn lights on and off based on illumination (Lux), HSM armstate, time of day, motion sensors, switches
  *
  *  Copyright 2020 Arn Burkhoff
  *
@@ -25,6 +22,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 19, 2020 v0.1.5B Unable to get Jobs Scheduled queue, create atomicState.Qnnn variables
+ *							that determine if an off job is queud during a lux setting change
+ *  Jul 19, 2020 v0.1.5A Allow for multiple motion triggers
  *  Jul 19, 2020 v0.1.4 Text cleanup, don't create runIn when light remains off from motion or switch trigger
  *  Jul 18, 2020 v0.1.3 Input Lux flag controls how lux is used with a light. Auto On/Off or ignored
  *                      added flag controlling how Lux is used when turning light off with motion or switch
@@ -76,7 +76,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.4";
+	return "0.1.5B";
 	}
 
 def mainPage()
@@ -153,10 +153,10 @@ def mainPage()
 					title: "${it.name}<br />Lux On/Off point 1 to 8000. Leave blank to use Standard Lux settings (Optional)"
 				input "global${it.id}LuxFlag", "bool", required: false, defaultValue: false,
 						title: "On/True: Light turns on and off following Lux set point<br />Off/False (Default): No automatic Lux on/off"
-				input "global${it.id}Motion", "capability.motionSensor", required: false, multiple:false, submitOnChange: true,
+				input "global${it.id}Motions", "capability.motionSensor", required: false, multiple:true, submitOnChange: true,
 					title: "${it.name}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
-				settingMotion="global${it.id}Motion"
-				if (settings."$settingMotion")
+				settingMotions="global${it.id}Motions"
+				if (settings."$settingMotions")
 					{
 					input "global${it.id}MotionMinutes", "number", required: true, defaultValue: 10, range: "1..240",
 						title: "${it.name}<br />Minutes to remain On"
@@ -165,10 +165,10 @@ def mainPage()
 					input "global${it.id}MotionFlagOff", "bool", required: false, defaultValue: false,
 						title: "${it.name}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off<br />"
 					}
-				input "global${it.id}Switch", "capability.switch", required: false, multiple:false, submitOnChange: true,
+				input "global${it.id}Switchs", "capability.switch", required: false, multiple:true, submitOnChange: true,
 					title: "${it.name}<br />Switches status sets light On (Optional)"
-				settingSwitch="global${it.id}Switch"
-				if (settings."$settingSwitch")
+				settingSwitch="global${it.id}Switchs"
+				if (settings."$settingSwitchs")
 					{
 					input "global${it.id}SwitchMinutes", "number", required: true, defaultValue: 10, range: "1..240",
 						title: "${it.name}<br />Minutes to remain On"
@@ -239,31 +239,17 @@ void initialize()
 			schedule(globalTimeOff, timeOffHandler)
 		globalLights.each
 			{
-			settingMotion="global${it.id}Motion"
-			if (settings."$settingMotion")
+			settingMotions="global${it.id}Motions"
+			if (settings."$settingMotions")
 				{
-				subscribe (settings."$settingMotion", "motion.active", deviceHandler)
+				subscribe (settings."$settingMotions", "motion.active", deviceHandler)
 				}
-			settingSwitch="global${it.id}Switch"
-			if (settings."$settingSwitch")
+			settingSwitchs="global${it.id}Switchs"
+			if (settings."$settingSwitchs")
 				{
-				subscribe (settings."$settingSwitch", "switch.on", deviceHandler)
+				subscribe (settings."$settingSwitchs", "switch.on", deviceHandler)
 				}
-
-//			This code may be used to test the Qnames tto verify they work and exist
-/*			if ((settings."$settingMotion" ) || (settings."$settingSwitch"))
-				{
-				qName="Q${it.id}"
-				try {
-					log.debug "trying $qName"
-					"${qName}"()
-					}
-				catch (e)
-					{
-					log.debug "Execution failed ${e}"
-					}
-				}
-*/			}
+			}
 		}
 //	log.debug "getevents returned " + getEvents('global1288Motion','active')  	//used to test getEvents on Done
 //	log.debug "getevents returned " + getEvents('global321Switch','on')  		//used to test getEvents on Done
@@ -323,6 +309,7 @@ def appLuxCalculate()
 	return appTestLux
 	}
 
+//	onlyLight deprecated in V015B
 void luxHandler(evt,forceOff=false,onlyLight=false)
 	{
 	if (settings.logDebugs) log.debug "deluxLighting: luxHandler entered"
@@ -355,7 +342,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 			settingDim="global${it.id}Dim"
 			settingLux="global${it.id}Lux"
 			settingLuxFlag="global${it.id}LuxFlag"
-			settingMotion="global${it.id}Motion"
+			settingMotion="global${it.id}Motions"
 			settingMotionMinutes="global${it.id}MotionMinutes"
 			if (settings."$settingLux")
 				testLux=settings."$settingLux"
@@ -386,12 +373,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 			else
 			if (testLux < currLux || settings."$settingLuxFlag" != true || location.hsmStatus == 'armedNight' || forceOff ) //bulb is on if we get here
 				{
-				def minutes = new Integer ("0")
-				if (settings."$settingMotionMinutes")
-					minutes=settings."$settingMotionMinutes"
-				if (settings."$settingMotion" &&
-					(settings."$settingMotion".currentValue('motion') == 'active' ||
-					(minutes > 0 && getEvents(settingMotion,'active', minutes))))
+				if (atomicState?."Q${it.id}")		//is a light off job scheduled?
 					{
 					if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
 					}
@@ -407,6 +389,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 		}
 	}
 
+
 void timeOffHandler()
 	{
 	if (settings.logDebugs) log.debug  "deluxLighting timeOffHandler"
@@ -421,69 +404,98 @@ void deviceHandler(evt)
 	def settingDim=""
 	def settingLux=""
 	def settingDvcFlagOn=""
+	def lightIndex=-1
 	def triggerSensor = evt.getDevice()
 	def triggerId = evt.getDevice().id		//id of triggering device
 	def triggerText='Switch'
+	def triggerIndex=-1
 	def qName=''
 	if (triggerSensor.hasCapability("MotionSensor"))
 		triggerText='Motion'
 	if (settings.logDebugs) log.debug  "deviceHandler entered: ${evt.getDevice().name} $triggerId triggerText $triggerText"
 	globalLights.each
 		{
+		lightIndex++
 		qName="Q${it.id}"
-		settingDevice="global${it.id}${triggerText}"		//name of motion or switch setting sensor controlling light
+		settingDevice="global${it.id}${triggerText}s"		//name of motion or switch setting sensor controlling light
 		settingLux="global${it.id}Lux"
 		settingDvcFlagOn="global${it.id}${triggerText}FlagOn"
 		if (settings.logDebugs) log.debug "searching for ${settingDevice} triggerid:$triggerId ${settings."${settingLuxFlagOn}"} $triggerText occurred for light device ${it.name}"
-		if (settings."${settingDevice}" && triggerId == settings."${settingDevice}".id)
+		if (settings."${settingDevice}")
 			{
-			if (settings.logDebugs) log.debug "found ${settingDevice} ids $triggerId ${settings."${settingDevice}".id}"
-			settingDeviceMinutes="global${it.id}${triggerText}Minutes"
-			minutes=settings."$settingDeviceMinutes"
-			if (settings.logDebugs)log.debug "it.name on minutes is ${minutes}"
-			seconds=minutes * 60
-
-			if (settings."$settingLux")
-				testLux=settings."$settingLux"
-			else
-				testLux = appTestLux
-
-			if (it.currentValue('switch') == 'on')					//already On update off time
-				runInQueue(seconds,qName,it.id)
-			else
-			if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
-				{
-				runInQueue(seconds,qName,it.id)
-				settingDim="global${it.id}Dim"
-				if (settings."$settingDim")
+			triggerIndex=-1
+			settings."${settingDevice}".find
+				{ it2 ->
+				triggerIndex++
+				if (triggerId == it2.id)
 					{
-					if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
-					it.setLevel(settings."$settingDim", 5)
+					if (settings.logDebugs) log.debug "found ${settingDevice} ids $triggerId ${it2.id}"
+					settingDeviceMinutes="global${it.id}${triggerText}Minutes"
+					minutes=settings."$settingDeviceMinutes"
+					if (settings.logDebugs)log.debug "it.name on minutes is ${minutes}"
+					seconds=minutes * 60
+
+					if (settings."$settingLux")
+						testLux=settings."$settingLux"
+					else
+						testLux = appTestLux
+
+					if (it.currentValue('switch') == 'on')					//already On update off time
+						runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
+					else
+					if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
+						{
+						runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
+						settingDim="global${it.id}Dim"
+						if (settings."$settingDim")
+							{
+							if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
+							it.setLevel(settings."$settingDim", 5)
+							}
+						else
+							{
+							if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing On ${it.name} ${it.id} ${settingDim} not found"
+							it.on()
+							}
+						}
+					return true
 					}
 				else
 					{
-					if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing On ${it.name} ${it.id} ${settingDim} not found"
-					it.on()
+					if (settings.logDebugs) log.debug "did not match ${settingDevice} ids $triggerId ${it2.id}"
+					return false
 					}
 				}
 			}
 		}
 	}
 
-void runInQueue(seconds, qName, dvcId)
+void runInQueue(seconds, qName, lightIndex, lightId, triggerSettingName, triggerIndex, triggerId)
 	{
 	try {
-		if (settings.logDebugs) log.debug "deluxLighting runInQueue: test if $qName exists as a method seconds:$seconds, Id:$dvcId"
+		if (settings.logDebugs) log.debug "deluxLighting runInQueue: seconds:$seconds, qName:$qName, lightIndex:$lightIndex,lightId:$lightId, triggerSettingName:$triggerSettingName, triggerIndex:$triggerIndex, triggerId:$triggerId"
 		"${qName}"()									//When method exists queue it to the method
-		runIn (seconds, "${qName}", [data: dvcId])		//turn off in setting minutes from last activity, pass the device Id
+		runIn (seconds, "${qName}",
+						[data: [lightIndex: lightIndex,
+						lightId: lightId,
+						triggerSettingName: triggerSettingName,
+						triggerIndex: triggerIndex,
+						triggerId: triggerId]])
+		atomicState."${qName}"=true
 		}
 	catch (e)
 		{
 		log.warn "deluxLighting runInQueue: Using default runIn queue, please code $qName method"
-		runIn (seconds, "lightOff", [data: [it.id], overwrite: false])		//turn off in setting minutes from last activity, pass the device id
+		runIn (seconds, "qOffHandler",
+						[data: [lightIndex: lightIndex,
+						lightId: lightId,
+						triggerSettingName: triggerSettingName,
+						triggerIndex: triggerIndex,
+						triggerId: triggerId], overwrite: false ])
 		}
 	}
 
+/*	deprecated in V015B
 def getEvents(settingDevice,deviceValue,minutes)
 	{
 	if (settings.logDebugs) log.debug "LuxLighing getEvents entered, Device: $settingDevice deviceValue: $deviceValue Minutes: $minutes"
@@ -518,50 +530,95 @@ def getEvents(settingDevice,deviceValue,minutes)
 	if (settings.logDebugs) log.debug "getEvents return value is $returnValue"
 	return returnValue
 	}
-
-/* standard runIn queue when device Queue method not coded
-void lightOff(dvcId)
-	{
-	if (settings.logDebugs) log.debug "deluxLighting lightOff entered ${dvcId.id} ${dvcId.name}"
-	luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
-	}
-
-/*
- * runIn queues eliminate overwrite: false reducing overhead for busy switch or motion sensor
+*/
+/* runIn queues eliminate overwrite: false reducing overhead for busy switch or motion sensor
  * The following Qnnnn routines are manually coded until I figure out how to generate them wih a Groovy Macro
- * They purpose is to allow the device runIn to work with overwrite true eliminating extra timeout processing
+ * They allow the device runIn to work with overwrite true, eliminating extra timeout processing
  * user should code one per globalLights defined device.id with a related switch or motion sensor
  */
-void Q1288(dvcIdj=false)
+void Q1288(mapData=false)
 	{
-	if (settings.logDebugs) log.debug "deluxLighting Q1288 entered ${dvcId}"
-	if (dvcId)
-		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	if (settings.logDebugs) log.debug "deluxLighting Q1288 entered ${mapData}"
+	if (mapData)
+		{
+		atomicState.Q1288=false
+		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
+		}
 	}
 
-void Q1281(dvcId=false)
+void Q1281(mapData=false)
 	{
-	if (settings.logDebugs) log.debug "deluxLighting Q1281 entered ${dvcId}"
-	if (dvcId)
-		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	if (settings.logDebugs) log.debug "deluxLighting Q1281 entered ${mapData}"
+	if (mapData)
+		{
+		atomicState.Q1281=false
+		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
+		}
 	}
 
-void Q321(dvcId=false)
+void Q321(mapData=false)
 	{
-	if (settings.logDebugs) log.debug "deluxLighting Q321 entered ${dvcId}"
-	if (dvcId)
-		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	if (settings.logDebugs) log.debug "deluxLighting Q321 entered ${mapData}"
+	if (mapData)
+		{
+		atomicState.Q321=false
+		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
+		}
 	}
 
-void Q2(dvcId=false)
+void Q2(mapData=false)
 	{
-	if (settings.logDebugs) log.debug "deluxLighting Q2 entered ${dvcId}"
-	if (dvcId)
-		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	if (settings.logDebugs) log.debug "deluxLighting Q2 entered ${mapData}"
+	if (mapData)
+		{
+		atomicState.Q2=false
+		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
+		}
 	}
-void Q3(dvcId=false)
+void Q3(mapData=false)
 	{
-	if (settings.logDebugs) log.debug "deluxLighting Q3 entered ${dvcId}"
-	if (dvcId)
-		luxHandler(false,false,dvcId)		//light may or may not be turned off based on lux and system satus
+	if (settings.logDebugs) log.debug "deluxLighting Q3 entered ${mapData}"
+	if (mapData)
+		{
+		atomicState.Q3=false
+		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
+		}
+	}
+
+void qOffHandler(mapData)
+	{
+/*		runIn and map data formats
+		runIn (seconds, "${qName}",
+						data: ["lightIndex": lightIndex,
+						"lightId": lightId,
+						"triggerSettingName": triggerSettingName,
+						"triggerIndex": triggerIndex,
+						"triggerId": triggerId]]
+		[lightIndex:4, lightId:1288, triggerSettingName:global1288Motions, triggerIndex:0, triggerId:1057]
+*/
+
+	if (settings.logDebugs) log.debug "qOffHandler entered: $mapData"
+
+/*	keep these debugging statements just in case the logic breaks and intense debugging is needed
+	log.debug settings.globalLights.id[mapData.lightIndex]+' '+settings.globalLights.id[mapData.lightIndex].class.name
+	log.debug mapData.lightId +' '+ mapData.lightId.class.name
+	log.debug settings."${mapData.triggerSettingName}".id[mapData.triggerIndex]+' '+settings."${mapData.triggerSettingName}".id[mapData.triggerIndex].class.name
+	log.debug mapData.triggerId +' '+ mapData.triggerId.class.name
+*/
+
+//	Verify the mapData remains valid. It's a precaution against an interim settings save. Better to leave a light on, than creating an error
+
+	if (settings.globalLights.id[mapData.lightIndex] == mapData.lightId &&
+		settings."${mapData.triggerSettingName}".id[mapData.triggerIndex] == mapData.triggerId)
+		{
+		if (settings.globalLights[mapData.lightIndex].currentValue('switch') == 'on')
+			{
+			if (settings.logDebugs) log.debug "doing off " + ' '+ settings.globalLights[mapData.lightIndex].name +' '+ settings.globalLights.id[mapData.lightIndex]
+			settings.globalLights[mapData.lightIndex].off()
+			}
+		else
+			if (settings.logDebugs) log.debug 'deluxLighting qOffHandler: Light already Off'
+		}
+	else
+		log.warn "deluxLighting qOffHandler: mismatched failure to process: $mapData"
 	}
