@@ -440,8 +440,11 @@ void deviceHandler(evt)
 					else
 						testLux = appTestLux
 
-					if (it.currentValue('switch') == 'on')					//already On update off time
-						runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
+					if (it.currentValue('switch') == 'on')	//already On update off time if queued
+						{
+						if (atomicState."$qName")
+							runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
+						}
 					else
 					if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
 						{
