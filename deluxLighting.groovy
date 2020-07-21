@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 21, 2020 v0.1.6 In luxLighting: when setting light on remove any queued off jobs and atomicState variables for the light
  *  Jul 20, 2020 v0.1.5C Fix bug: light shutting off when lux > set point when it should not. missing queued atomic state
  *							Adjust deviceHandler logic
  *  Jul 19, 2020 v0.1.5B Unable to get Jobs Scheduled queue, create atomicState.Qnnn variables
@@ -360,6 +361,11 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 				else
 				if (testLux >= currLux && settings."$settingLuxFlag")
 					{
+					if (atomicState?."Q${it.id}")
+						{
+						atomicState."Q${it.id}"=false		//V016 clear scheduled off jobs for this light
+						unschedule("Q${it.id}")				//V016
+						}
 					if (settings."$settingDim")
 						{
 						if (settings.logDebugs) log.debug "doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
