@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 20, 2020 v0.1.5C Fix bug: light shutting off when lux > set point when it should not. missing queued atomic state
+ *							Adjust deviceHandler logic
  *  Jul 19, 2020 v0.1.5B Unable to get Jobs Scheduled queue, create atomicState.Qnnn variables
  *							that determine if an off job is queud during a lux setting change
  *  Jul 19, 2020 v0.1.5A Allow for multiple motion triggers
@@ -76,7 +78,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.5B";
+	return "0.1.5C";
 	}
 
 def mainPage()
@@ -442,7 +444,7 @@ void deviceHandler(evt)
 
 					if (it.currentValue('switch') == 'on')	//already On update off time if queued
 						{
-						if (atomicState."$qName")
+						if (atomicState."$qName" || !(settings."$settingDvcFlagOn"))
 							runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
 						}
 					else
