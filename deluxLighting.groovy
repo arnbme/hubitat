@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 22, 2020 v0.1.7 Change lux on/off flag to luxOn and luxOff flags, adjust code accordingly
  *  Jul 21, 2020 v0.1.6 In luxLighting: when setting light on remove any queued off jobs and atomicState variables for the light
  *  Jul 20, 2020 v0.1.5C Fix bug: light shutting off when lux > set point when it should not. missing queued atomic state
  *							Adjust deviceHandler logic
@@ -79,7 +80,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.5C";
+	return "0.1.7";
 	}
 
 def mainPage()
@@ -140,7 +141,7 @@ def mainPage()
 				}
 			input "globalLuxSensors", "capability.illuminanceMeasurement", required: true, multiple: true,
 				title: "Lux sensors. When more than one, the average lux value is used"
-			input "globalTimeOff", "time", title: "Optional: Turn off lighting devices at this time daily. Leave blank to ignore", required: false
+			input "globalTimeOff", "time", title: "Optional: Turn off lighting devices with Lux On flag true at this time daily. Leave blank to ignore", required: false
 			input "globalLights", "capability.switch", required: true, multiple: true, submitOnChange: true,
 				title: "One or more Bulbs, Leds or Switches"
 
@@ -154,8 +155,10 @@ def mainPage()
 					}
 				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",submitOnChange: true,
 					title: "${it.name}<br />Lux On/Off point 1 to 8000. Leave blank to use Standard Lux settings (Optional)"
-				input "global${it.id}LuxFlag", "bool", required: false, defaultValue: false,
-						title: "On/True: Light turns on and off following Lux set point<br />Off/False (Default): No automatic Lux on/off"
+				input "global${it.id}LuxFlagOn", "bool", required: false, defaultValue: false,
+						title: "On/True: Light turns ON when current Lux <= set point<br />Off/False (Default): No automatic Lux on"
+				input "global${it.id}LuxFlagOff", "bool", required: false, defaultValue: false,
+						title: "On/True: Light turns OFF when current Lux > set point<br />Off/False (Default): No automatic Lux off"
 				input "global${it.id}Motions", "capability.motionSensor", required: false, multiple:true, submitOnChange: true,
 					title: "${it.name}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
 				settingMotions="global${it.id}Motions"
@@ -164,9 +167,9 @@ def mainPage()
 					input "global${it.id}MotionMinutes", "number", required: true, defaultValue: 10, range: "1..240",
 						title: "${it.name}<br />Minutes to remain On"
 					input "global${it.id}MotionFlagOn", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On<br />"
+						title: "${it.name}<br />On/True: Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On with motion<br />"
 					input "global${it.id}MotionFlagOff", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off<br />"
+						title: "${it.name}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when motion time expires<br />"
 					}
 				input "global${it.id}Switchs", "capability.switch", required: false, multiple:true, submitOnChange: true,
 					title: "${it.name}<br />Switches status sets light On (Optional)"
@@ -176,9 +179,9 @@ def mainPage()
 					input "global${it.id}SwitchMinutes", "number", required: true, defaultValue: 10, range: "1..240",
 						title: "${it.name}<br />Minutes to remain On"
 					input "global${it.id}SwitchFlagOn", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On<br />"
+						title: "${it.name}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
 					input "global${it.id}SwitchFlagOff", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off<br />"
+						title: "${it.name}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
 					}
 				}
 			}
@@ -331,7 +334,8 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 	def	settingLux=""
 	def	settingMotion=""
 	def	settingMotionMinutes=""
-	def settingLuxFlag=""
+	def settingLuxFlagOn=""
+	def settingLuxFlagOff=""
 	globalLights.each
 		{
 		if (onlyLight && onlyLight != it.id) //dont process this light
@@ -344,7 +348,8 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 				if (settings.logDebugs) log.debug "luxHandler ${it.name} processing onlylight ${it.id}"
 			settingDim="global${it.id}Dim"
 			settingLux="global${it.id}Lux"
-			settingLuxFlag="global${it.id}LuxFlag"
+			settingLuxFlagOn="global${it.id}LuxFlagOn"
+			settingLuxFlagOff="global${it.id}LuxFlagOff"
 			settingMotion="global${it.id}Motions"
 			settingMotionMinutes="global${it.id}MotionMinutes"
 			if (settings."$settingLux")
@@ -359,7 +364,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 					if (settings.logDebugs) log.debug "leaving ${it.name} Off"
 					}
 				else
-				if (testLux >= currLux && settings."$settingLuxFlag")
+				if (testLux >= currLux && settings."$settingLuxFlagOn")
 					{
 					if (atomicState?."Q${it.id}")
 						{
@@ -379,7 +384,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 					}
 				}
 			else
-			if (testLux < currLux || settings."$settingLuxFlag" != true || location.hsmStatus == 'armedNight' || forceOff ) //bulb is on if we get here
+			if (testLux < currLux || settings."$settingLuxFlagOff" != true || location.hsmStatus == 'armedNight' || forceOff ) //bulb is on if we get here
 				{
 				if (atomicState?."Q${it.id}")		//is a light off job scheduled?
 					{
@@ -450,7 +455,7 @@ void deviceHandler(evt)
 
 					if (it.currentValue('switch') == 'on')	//already On update off time if queued
 						{
-						if (atomicState."$qName" || !(settings."$settingDvcFlagOn"))
+						if (atomicState."$qName")
 							runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
 						}
 					else
