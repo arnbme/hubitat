@@ -22,6 +22,10 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 24, 2020 v0.2.1A Use xref on contacts and switches, a bit more complex than contacts
+ *  Jul 24, 2020 v0.2.1 Create cross reference for better performance when relating devices to lights, use for contacts
+ *  Jul 24, 2020 v0.2.0 Add control by contact sensors, but seemed slow compared to simple automation so not using it
+ *							Likely due to all the searching have to fix that by using parent child setup or Xref!
  *  Jul 23, 2020 v0.1.9 timeOffHandler stop using luxHandler to shut lights, use specific time off logic
  *  Jul 23, 2020 v0.1.8 Add bool TimerOffFlag for each device, On: timer shuts device, off timer has no effect (default)
  *  					20 minutes prior to forced time off, start queing to prevent forced light Off on active motions or switches
@@ -85,7 +89,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.9";
+	return "0.2.1";
 	}
 
 def mainPage()
@@ -172,29 +176,41 @@ def mainPage()
 						title: "On/True: Light turns OFF when current Lux > set point<br />Off/False (Default): No automatic Lux off"
 				input "global${it.id}Motions", "capability.motionSensor", required: false, multiple:true, submitOnChange: true,
 					title: "${it.name}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
-				settingMotions="global${it.id}Motions"
-				if (settings."$settingMotions")
+				if (settings."global${it.id}Motions")
 					{
+
 					input "global${it.id}MotionMinutes", "number", required: true, defaultValue: 10, range: "1..240",
-						title: "${it.name}<br />Minutes to remain On"
+						title: "${it.label}<br />Minutes to remain On"
 					input "global${it.id}MotionFlagOn", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On with motion<br />"
+						title: "${it.label}<br />On/True: Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On with motion<br />"
 					input "global${it.id}MotionFlagOff", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when motion time expires<br />"
+						title: "${it.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when motion time expires<br />"
 					}
 				input "global${it.id}Switchs", "capability.switch", required: false, multiple:true, submitOnChange: true,
-					title: "${it.name}<br />Switches status sets light On (Optional)"
-				settingSwitch="global${it.id}Switchs"
-				if (settings."$settingSwitchs")
+					title: "${it.label}<br />Switches status sets light On (Optional)"
+				if (settings."global${it.id}Switchs")
 					{
 					input "global${it.id}SwitchMinutes", "number", required: true, defaultValue: 10, range: "1..240",
-						title: "${it.name}<br />Minutes to remain On"
+						title: "${it.label}<br />Minutes to remain On"
 					input "global${it.id}SwitchFlagOn", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
+						title: "${it.label}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
 					input "global${it.id}SwitchFlagOff", "bool", required: false, defaultValue: false,
-						title: "${it.name}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
+						title: "${it.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
 					}
-				}
+				input "global${it.id}Contacts", "capability.contactSensor", required: false, multiple:true, submitOnChange: true,
+					title: "${it.label}<br />Contact that set light On (Optional)"
+//				initially contact open On closed Off used mainly for closets, no timers for starters Jul 24, 2020
+/*				settingContacts="global${it.id}Contacts"
+				if (settings."$settingContacts")
+					{
+					input "global${it.id}SwitchMinutes", "number", required: true, defaultValue: 10, range: "1..240",
+						title: "${it.label}<br />Minutes to remain On"
+					input "global${it.id}SwitchFlagOn", "bool", required: false, defaultValue: false,
+						title: "${it.label}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
+					input "global${it.id}SwitchFlagOff", "bool", required: false, defaultValue: false,
+						title: "${it.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
+					}
+*/				}
 			}
 		}
 	}
@@ -212,6 +228,7 @@ void updated() {
 
 void initialize()
 	{
+	def dvcXref = [:]
 	if(settings.logDebugs)
 		runIn(1800,debugOff)		//turns off debug logging after 30 min
 	else
@@ -254,19 +271,56 @@ void initialize()
 		subscribe(location, "hsmStatus", luxHandler)
 		if (globalTimeOff)
 			schedule(globalTimeOff, timeOffHandler)
+		def i=-1
 		globalLights.each
 			{
+			i++
 			settingMotions="global${it.id}Motions"
 			if (settings."$settingMotions")
 				{
+				settings."global${it.id}Motions".each
+					{it2 ->
+					if (dvcXref[it2.id])
+						dvcXref [it2.id] << i
+					else
+						dvcXref [it2.id] = [i]
+					}
 				subscribe (settings."$settingMotions", "motion.active", deviceHandler)
 				}
 			settingSwitchs="global${it.id}Switchs"
 			if (settings."$settingSwitchs")
 				{
+				settings."global${it.id}Switchs".each
+					{it2 ->
+					if (dvcXref[it2.id])
+						dvcXref [it2.id] << i
+					else
+						dvcXref [it2.id] = [i]
+					}
 				subscribe (settings."$settingSwitchs", "switch.on", deviceHandler)
 				}
+			if (settings."global${it.id}Contacts")
+				{
+				settings."global${it.id}Contacts".each
+					{it2 ->
+					if (dvcXref[it2.id])
+						dvcXref [it2.id] << i
+					else
+						dvcXref [it2.id] = [i]
+					}
+				subscribe (settings."global${it.id}Contacts", "contact", contactHandler)
+				}
 			}
+		log.info "trigger device cross reference $dvcXref"
+		state.dvcXref=dvcXref
+//		state.dvcXref["1057"].each
+//			{
+//			log.debug globalLights[it].label
+//			}
+//		state.dvcXref["33"].each
+//			{
+//			log.debug globalLights[it].label
+//			}
 		}
 //	log.debug "getevents returned " + getEvents('global321Switch','on')  		//used to test getEvents on Done
 	}
@@ -435,16 +489,19 @@ void timeOffHandler()
 
 void deviceHandler(evt)
 	{
+	log.debug  "deviceHandler entered"
 	def currLux = currLuxCalculate()
 	def appTestLux = appLuxCalculate()
 	def settingDevice=""
 	def settingDim=""
 	def settingLux=""
 	def settingDvcFlagOn=""
-	def lightIndex=-1
+	def id=""
 	def triggerSensor = evt.getDevice()
 	def triggerId = evt.getDevice().id		//id of triggering device
 	def triggerText='Switch'
+	if (triggerSensor.hasCapability("MotionSensor"))
+		triggerText='Motion'
 	def triggerIndex=-1
 	def qName=''
 //	def dateTime = Date.parse("yyyy-MM-dd'T'HH:mm:ss", globalTimeOff)
@@ -454,68 +511,112 @@ void deviceHandler(evt)
 //	millis to time off - 20 minutes, start setting q and runin
 	def millisToTimeOff= Date.parse("yyyy-MM-dd'T'HH:mm:ss", globalTimeOff).getTime() - now()
 	if (settings.logDebugs) log.debug "Millis $millisToTimeOff"
-	if (triggerSensor.hasCapability("MotionSensor"))
-		triggerText='Motion'
-	if (settings.logDebugs) log.debug  "deviceHandler entered: ${evt.getDevice().name} $triggerId triggerText $triggerText"
-	globalLights.each
+	if (settings.logDebugs)log.debug  "deviceHandler processing: ${evt.getDevice().name} $triggerId triggerText $triggerText"
+	state.dvcXref[triggerId].each
 		{
-		lightIndex++
-		qName="Q${it.id}"
-		settingDevice="global${it.id}${triggerText}s"		//name of motion or switch setting sensor controlling light
-		settingLux="global${it.id}Lux"
-		settingDvcFlagOn="global${it.id}${triggerText}FlagOn"
-		if (settings.logDebugs) log.debug "searching for ${settingDevice} triggerid:$triggerId ${settings."${settingLuxFlagOn}"} $triggerText occurred for light device ${it.name}"
-		if (settings."${settingDevice}")
+
+		id=globalLights[it].id
+		qName="Q${id}"
+		if (settings.logDebugs)log.debug "process ${globalLights[it].label} ids: $triggerId $id"
+		settingDevice="global${id}${triggerText}s"				//name of motion or switch setting sensor controlling light
+		settingDeviceMinutes="global${id}${triggerText}Minutes"
+		settingDvcFlagOn="global${id}${triggerText}FlagOn"
+		if (settings."${settingDevice}".size() == 1)
+			triggerIndex=0
+		else
 			{
 			triggerIndex=-1
 			settings."${settingDevice}".find
 				{ it2 ->
 				triggerIndex++
 				if (triggerId == it2.id)
-					{
-					if (settings.logDebugs) log.debug "found ${settingDevice} ids $triggerId ${it2.id}"
-					settingDeviceMinutes="global${it.id}${triggerText}Minutes"
-					minutes=settings."$settingDeviceMinutes"
-					if (settings.logDebugs)log.debug "it.name on minutes is ${minutes}"
-					seconds=minutes * 60
-
-					if (settings."$settingLux")
-						testLux=settings."$settingLux"
-					else
-						testLux = appTestLux
-
-					if (it.currentValue('switch') == 'on')	//already On update off time if queued or withing 20 minutes of timer off
-						{
-						if (millisToTimeOff >=0 && millisToTimeOff < 1200000)	//keep actives on at forceoff time q at 20 minutes
-							{
-							runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
-							}
-						else
-						if (atomicState."$qName")
-							runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
-						}
-					else
-					if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
-						{
-						runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
-						settingDim="global${it.id}Dim"
-						if (settings."$settingDim")
-							{
-							if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
-							it.setLevel(settings."$settingDim", 5)
-							}
-						else
-							{
-							if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing On ${it.name} ${it.id} ${settingDim} not found"
-							it.on()
-							}
-						}
 					return true
-					}
 				else
-					{
-					if (settings.logDebugs) log.debug "did not match ${settingDevice} ids $triggerId ${it2.id}"
 					return false
+				}
+			}
+		minutes=settings."$settingDeviceMinutes"
+		if (settings.logDebugs)log.debug "${globalLights[it].label} on minutes is ${minutes}"
+		seconds=minutes * 60
+
+		if (settings."$settingLux")
+			testLux=settings."$settingLux"
+		else
+			testLux = appTestLux
+
+		if (globalLights[it].currentValue('switch') == 'on')	//light is already On update off time if queued or withing 20 minutes of timer off
+			{
+			if (millisToTimeOff >=0 && millisToTimeOff < 1200000)	//keep actives on at forceoff time q at 20 minutes
+				{
+				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
+				}
+			else
+			if (atomicState."$qName")
+				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
+			}
+		else
+		if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
+			{
+			runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
+			settingDim="global${id}Dim"
+			if (settings."$settingDim")
+				{
+				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing setlevel ${globalLights[it].name} ${id} ${settingDim}: " + settings."$settingDim"
+				globalLights[it].setLevel(settings."$settingDim", 5)
+				}
+			else
+				{
+				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing On ${globalLights[it].name} ${id} ${settingDim} not found"
+				globalLights[it].on()
+				}
+			}
+		}
+	}
+
+void contactHandler(evt)
+	{
+	def triggerSensor = evt.getDevice()
+	def triggerId = evt.getDevice().id		//id of triggering device
+	def settingDevice = ""
+	def allContactsClosed=true
+	if (settings.logDebugs) log.debug  "contactHandler entered: ${evt.getDevice().label} ${evt.value} $triggerId"
+	if (evt.value == 'open')
+		{
+		state.dvcXref[triggerId].each
+			{
+			settings.globalLights[it].on()
+//			log.debug "light on"
+			}
+		}
+	else
+		{
+		state.dvcXref[triggerId].each
+			{
+			settingDevice = "global${globalLights[it].id}Contacts"
+			if (settings."$settingDevice".size()==1)
+				settings.globalLights[it].off()
+			else
+				{
+//				log.debug "checking all related contacts for $settingDevice"
+				allContactsClosed=true
+				settings."$settingDevice".find
+					{it3 ->
+					if (it3.currentValue('contact') == "open")
+						{
+//						log.debug "Open ${it3.label}"
+						allContactsClosed=false
+						return true
+						}
+					else
+						{
+//						log.debug "Not Open ${it3.label} ${it3.currentValue('contact')}"
+						return false
+						}
+					}
+				if (allContactsClosed)
+					{
+					settings.globalLights[it].off()
+//					log.debug "light off"
 					}
 				}
 			}
