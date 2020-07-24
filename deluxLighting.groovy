@@ -22,8 +22,11 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 23, 2020 v0.1.9 timeOffHandler stop using luxHandler to shut lights, use specific time off logic
  *  Jul 23, 2020 v0.1.8 Add bool TimerOffFlag for each device, On: timer shuts device, off timer has no effect (default)
  *  					20 minutes prior to forced time off, start queing to prevent forced light Off on active motions or switches
+ *						   this is still a workaround until a logical solution can be created for this issue without
+ *						   queuing all the motions and switch tirggers that does work
  *  Jul 22, 2020 v0.1.7 Change lux on/off flag to luxOn and luxOff flags, adjust code accordingly
  *  Jul 21, 2020 v0.1.6 In luxLighting: when setting light on remove any queued off jobs and atomicState variables for the light
  *  Jul 20, 2020 v0.1.5C Fix bug: light shutting off when lux > set point when it should not. missing queued atomic state
@@ -82,7 +85,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.8";
+	return "0.1.9";
 	}
 
 def mainPage()
@@ -323,6 +326,7 @@ def appLuxCalculate()
 	}
 
 //	onlyLight deprecated in V015B
+//  forceoff deprecated v019
 void luxHandler(evt,forceOff=false,onlyLight=false)
 	{
 	if (settings.logDebugs) log.debug "deluxLighting: luxHandler entered"
@@ -409,11 +413,24 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 		}
 	}
 
-
 void timeOffHandler()
 	{
 	if (settings.logDebugs) log.debug  "deluxLighting timeOffHandler"
-	luxHandler(true,true)
+	settings.globalLights.each
+		{
+		if (it.currentValue('switch') == 'on' && "global${it.id}TimerOffFlag")
+			{
+			if (atomicState?."Q${it.id}")		//is a light off job scheduled?
+				{
+				if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
+				}
+			else
+				{
+				if (settings.logDebugs) log.debug "doing off ${it.name} ${it.id}"
+				it.off()
+				}
+			}
+		}
 	}
 
 void deviceHandler(evt)
@@ -435,8 +452,8 @@ void deviceHandler(evt)
 //	log.debug "$dateTime $millis ${now()}"
 //	log.debug "${millis-now()}"
 //	millis to time off - 20 minutes, start setting q and runin
-	def MillisToTimeOff= Date.parse("yyyy-MM-dd'T'HH:mm:ss", globalTimeOff).getTime() - now()
-//	log.debug MillisToTimeOff
+	def millisToTimeOff= Date.parse("yyyy-MM-dd'T'HH:mm:ss", globalTimeOff).getTime() - now()
+	if (settings.logDebugs) log.debug "Millis $millisToTimeOff"
 	if (triggerSensor.hasCapability("MotionSensor"))
 		triggerText='Motion'
 	if (settings.logDebugs) log.debug  "deviceHandler entered: ${evt.getDevice().name} $triggerId triggerText $triggerText"
@@ -470,7 +487,9 @@ void deviceHandler(evt)
 					if (it.currentValue('switch') == 'on')	//already On update off time if queued or withing 20 minutes of timer off
 						{
 						if (millisToTimeOff >=0 && millisToTimeOff < 1200000)	//keep actives on at forceoff time q at 20 minutes
+							{
 							runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
+							}
 						else
 						if (atomicState."$qName")
 							runInQueue(seconds,qName, lightIndex, it.id, settingDevice, triggerIndex, triggerId)
