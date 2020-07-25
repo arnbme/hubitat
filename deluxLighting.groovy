@@ -489,7 +489,7 @@ void timeOffHandler()
 
 void deviceHandler(evt)
 	{
-	log.debug  "deviceHandler entered"
+	if (settings.logDebugs) log.debug  "deviceHandler entered"
 	def currLux = currLuxCalculate()
 	def appTestLux = appLuxCalculate()
 	def settingDevice=""
