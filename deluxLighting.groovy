@@ -161,21 +161,21 @@ def mainPage()
 				if (settings.globalTimeOff)
 					{
 					input "global${it.id}TimerOffFlag", "bool", required: false,
-						title: "${it.name}<br />Device turns Off with timer<br />Device does not respond to timer Off (Default)"
+						title: "${it.label}<br />Device turns Off with timer<br />Device does not respond to timer Off (Default)"
 					}
 				if (it.hasCommand('setLevel'))
 					{
 					input "global${it.id}Dim", "number", required: false, multiple: false, range: "1..100",
-						title: "${it.name}<br />Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
+						title: "${it.label}<br />Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
 					}
 				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",submitOnChange: true,
-					title: "${it.name}<br />Lux On/Off point 1 to 8000. Leave blank to use Standard Lux settings (Optional)"
+					title: "${it.label}<br />Lux On/Off point 1 to 8000. Leave blank to use Standard Lux settings (Optional)"
 				input "global${it.id}LuxFlagOn", "bool", required: false, defaultValue: false,
 						title: "On/True: Light turns ON when current Lux <= set point<br />Off/False (Default): No automatic Lux on"
 				input "global${it.id}LuxFlagOff", "bool", required: false, defaultValue: false,
 						title: "On/True: Light turns OFF when current Lux > set point<br />Off/False (Default): No automatic Lux off"
 				input "global${it.id}Motions", "capability.motionSensor", required: false, multiple:true, submitOnChange: true,
-					title: "${it.name}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
+					title: "${it.label}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
 				if (settings."global${it.id}Motions")
 					{
 
@@ -405,12 +405,12 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 		{
 		if (onlyLight && onlyLight != it.id) //dont process this light
 			{
-			if (settings.logDebugs) log.debug "luxHandler ${it.name} skipped ${it.id} $onlyLight"
+			if (settings.logDebugs) log.debug "luxHandler ${it.label} skipped ${it.id} $onlyLight"
 			}
 		else
 			{
 			if (onlyLight)
-				if (settings.logDebugs) log.debug "luxHandler ${it.name} processing onlylight ${it.id}"
+				if (settings.logDebugs) log.debug "luxHandler ${it.label} processing onlylight ${it.id}"
 			settingDim="global${it.id}Dim"
 			settingLux="global${it.id}Lux"
 			settingLuxFlagOn="global${it.id}LuxFlagOn"
@@ -421,12 +421,12 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 				testLux=settings."$settingLux"
 			else
 				testLux = appTestLux
-			if (settings.logDebugs) log.debug "${it.name} currLux: $currLux testLux: $testLux forceOff: ${forceOff} hsmStatus: $location.hsmStatus"
+			if (settings.logDebugs) log.debug "${it.label} currLux: $currLux testLux: $testLux forceOff: ${forceOff} hsmStatus: $location.hsmStatus"
 			if (it.currentValue('switch') == 'off')
 				{
 				if (location.hsmStatus == 'armedNight' || forceOff)
 					{
-					if (settings.logDebugs) log.debug "leaving ${it.name} Off"
+					if (settings.logDebugs) log.debug "leaving ${it.label} Off"
 					}
 				else
 				if (testLux >= currLux && settings."$settingLuxFlagOn")
@@ -438,26 +438,26 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 						}
 					if (settings."$settingDim")
 						{
-						if (settings.logDebugs) log.debug "doing setlevel ${it.name} ${it.id} ${settingDim}: " + settings."$settingDim"
+						if (settings.logDebugs) log.debug "doing setlevel ${it.label} ${it.id} ${settingDim}: " + settings."$settingDim"
 						it.setLevel(settings."$settingDim", 5)
 						}
 					else
 						{
-						if (settings.logDebugs) log.debug "doing On ${it.name} ${it.id} ${settingDim} not found"
+						if (settings.logDebugs) log.debug "doing On ${it.label} ${it.id} ${settingDim} not found"
 						it.on()
 						}
 					}
 				}
 			else
-			if (testLux < currLux || settings."$settingLuxFlagOff" != true || location.hsmStatus == 'armedNight' || (forceOff && settings."global${it.id}TimerOffFlag")) //bulb is on if we get here
+			if (testLux < currLux && settings."$settingLuxFlagOff" || location.hsmStatus == 'armedNight' || (forceOff && settings."global${it.id}TimerOffFlag")) //bulb is on if we get here
 				{
 				if (atomicState?."Q${it.id}")		//is a light off job scheduled?
 					{
-					if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
+					if (settings.logDebugs) log.debug "leaving ${it.label} On, $settingMotion is active"
 					}
 				else
 					{
-					if (settings.logDebugs) log.debug "doing off ${it.name} ${it.id}"
+					if (settings.logDebugs) log.debug "luxHandler doing off ${it.label} ${it.id}"
 					it.off()
 					}
 				}
@@ -476,11 +476,11 @@ void timeOffHandler()
 			{
 			if (atomicState?."Q${it.id}")		//is a light off job scheduled?
 				{
-				if (settings.logDebugs) log.debug "leaving ${it.name} On, $settingMotion is active"
+				if (settings.logDebugs) log.debug "leaving ${it.label} On, $settingMotion is active"
 				}
 			else
 				{
-				if (settings.logDebugs) log.debug "doing off ${it.name} ${it.id}"
+				if (settings.logDebugs) log.debug "doing off ${it.label} ${it.id}"
 				it.off()
 				}
 			}
@@ -511,7 +511,7 @@ void deviceHandler(evt)
 //	millis to time off - 20 minutes, start setting q and runin
 	def millisToTimeOff= Date.parse("yyyy-MM-dd'T'HH:mm:ss", globalTimeOff).getTime() - now()
 	if (settings.logDebugs) log.debug "Millis $millisToTimeOff"
-	if (settings.logDebugs)log.debug  "deviceHandler processing: ${evt.getDevice().name} $triggerId triggerText $triggerText"
+	if (settings.logDebugs)log.debug  "deviceHandler processing: ${evt.getDevice().label} $triggerId triggerText $triggerText"
 	state.dvcXref[triggerId].each
 		{
 
@@ -561,12 +561,12 @@ void deviceHandler(evt)
 			settingDim="global${id}Dim"
 			if (settings."$settingDim")
 				{
-				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing setlevel ${globalLights[it].name} ${id} ${settingDim}: " + settings."$settingDim"
+				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing setlevel ${globalLights[it].label} ${id} ${settingDim}: " + settings."$settingDim"
 				globalLights[it].setLevel(settings."$settingDim", 5)
 				}
 			else
 				{
-				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing On ${globalLights[it].name} ${id} ${settingDim} not found"
+				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing On ${globalLights[it].label} ${id} ${settingDim} not found"
 				globalLights[it].on()
 				}
 			}
@@ -766,7 +766,7 @@ void qOffHandler(mapData)
 		{
 		if (settings.globalLights[mapData.lightIndex].currentValue('switch') == 'on')
 			{
-			if (settings.logDebugs) log.debug "doing off " + ' '+ settings.globalLights[mapData.lightIndex].name +' '+ settings.globalLights.id[mapData.lightIndex]
+			if (settings.logDebugs) log.debug "doing off " + ' '+ settings.globalLights[mapData.lightIndex].label +' '+ settings.globalLights.id[mapData.lightIndex]
 			settings.globalLights[mapData.lightIndex].off()
 			}
 		else
