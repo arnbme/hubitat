@@ -426,7 +426,7 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 			}
 		}
 	else
-	if (curLux <= minLux)
+	if (currLux <= minLux)
 		{
 		if (lastLux <= minLux)
 			{
