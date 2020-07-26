@@ -22,6 +22,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 26, 2020 v0.2.2 Speed up luxHandler by setting luxMax and luxMin lux points, and lastLux
+ *						Add handler hsmStatusHandler, directly processing night mode lights off
+ *						Add NightFlag for each lighting device
  *  Jul 24, 2020 v0.2.1A Use xref on contacts and switches, a bit more complex than contacts
  *  Jul 24, 2020 v0.2.1 Create cross reference for better performance when relating devices to lights, use for contacts
  *  Jul 24, 2020 v0.2.0 Add control by contact sensors, but seemed slow compared to simple automation so not using it
@@ -89,7 +92,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.1";
+	return "0.2.2";
 	}
 
 def mainPage()
@@ -174,6 +177,8 @@ def mainPage()
 						title: "On/True: Light turns ON when current Lux <= set point<br />Off/False (Default): No automatic Lux on"
 				input "global${it.id}LuxFlagOff", "bool", required: false, defaultValue: false,
 						title: "On/True: Light turns OFF when current Lux > set point<br />Off/False (Default): No automatic Lux off"
+				input "global${it.id}NightFlag", "bool", required: false, defaultValue: false,
+						title: "On/True: Light turns OFF when at HSM armedNight status<br />Off/False (Default): No automatic armedNight off"
 				input "global${it.id}Motions", "capability.motionSensor", required: false, multiple:true, submitOnChange: true,
 					title: "${it.label}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
 				if (settings."global${it.id}Motions")
@@ -229,6 +234,8 @@ void updated() {
 void initialize()
 	{
 	def dvcXref = [:]
+	def maxLux = new Integer("0")
+	def minLux = new Integer("999999")
 	if(settings.logDebugs)
 		runIn(1800,debugOff)		//turns off debug logging after 30 min
 	else
@@ -268,12 +275,19 @@ void initialize()
 			}
 
 		subscribe(globalLuxSensors, "illuminance", luxHandler)
-		subscribe(location, "hsmStatus", luxHandler)
+		subscribe(location, "hsmStatus", hsmStatusHandler)
 		if (globalTimeOff)
 			schedule(globalTimeOff, timeOffHandler)
 		def i=-1
 		globalLights.each
 			{
+			if (settings."global${it.id}Lux")
+				{
+				if (settings."global${it.id}Lux" < minLux)
+					minLux=settings."global${it.id}Lux"
+				if (settings."global${it.id}Lux" > maxLux)
+					maxLux=settings."global${it.id}Lux"
+				}
 			i++
 			settingMotions="global${it.id}Motions"
 			if (settings."$settingMotions")
@@ -311,8 +325,14 @@ void initialize()
 				subscribe (settings."global${it.id}Contacts", "contact", contactHandler)
 				}
 			}
+		state.maxLux=maxLux
+		state.minLux=minLux
+		if (state?.lastlux==null)
+			state.lastLux=currLuxCalculate()
+		log.info "minLux: $minLux maxLux: $maxLux lastLux: ${state.lastLux}"
 		log.info "trigger device cross reference $dvcXref"
 		state.dvcXref=dvcXref
+
 //		state.dvcXref["1057"].each
 //			{
 //			log.debug globalLights[it].label
@@ -386,6 +406,35 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 	if (settings.logDebugs) log.debug "deluxLighting: luxHandler entered"
 	def currLux=currLuxCalculate()
 	def appTestLux=appLuxCalculate()
+	def minLux = state.minLux
+	def maxLux = state.maxLux
+	def lastLux = state.lastLux
+	state.lastLux=currLux
+	if (appTestLux < minLux)
+		minLux=appTestLux
+	if (appTestLux > minLux)
+		maxLux=appTestLux
+	if (settings.logDebugs) log.debug "maxLux: $maxLux, minLux: $minLux, lastLux: $lastLux, currLux; $currLux"
+	if (settings.logDebugs) log.debug "maxLux: ${maxLux.class.name}, minLux: ${minLux.class.name}, lastLux: ${lastLux.class.name}, currLux; ${currLux.class.name}"
+
+	if (currLux > maxLux)
+		{
+		if (lastLux > maxLux)
+			{
+			if (settings.logDebugs) log.debug "luxHandler skipped already above maximum Lux threshhold"
+			return
+			}
+		}
+	else
+	if (curLux <= minLux)
+		{
+		if (lastLux <= minLux)
+			{
+			if (settings.logDebugs) log.debug "luxHandler skipped already below lowest Lux threshhold"
+			return
+			}
+		}
+
 
 //	def sunRiseSet = getSunriseAndSunset(sunriseOffset: +45, sunsetOffset: -45)
 //	if (settings.logDebugs) log.debug "sunRise+45 ${sunRiseSet.sunrise} sunSet-45 ${sunRiseSet.sunset} ${sunRiseSet.sunrise.class.name} now ${new Date()}"
@@ -465,6 +514,9 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 				if (settings.logDebugs) log.debug 'Light skipped on and off'
 			}
 		}
+/*		log.debug "exiting after looping through all lighting"
+		used for timing during lux threshold development
+*/
 	}
 
 void timeOffHandler()
@@ -482,6 +534,34 @@ void timeOffHandler()
 				{
 				if (settings.logDebugs) log.debug "doing off ${it.label} ${it.id}"
 				it.off()
+				}
+			}
+		}
+	}
+
+void hsmStatusHandler(evt)
+	{
+	if (settings.logDebugs) log.debug  "deluxLighting hsmStatusHandler $evt.value"
+	if (evt.value.startsWith('arming'))
+		{}
+	else
+	if (evt.value!='armedNight')
+		luxHandler(evt)
+	else
+	{
+		settings.globalLights.each
+			{
+			if (it.currentValue('switch') == 'on' && "global${it.id}NightFlag")
+				{
+				if (atomicState?."Q${it.id}")		//is a light off job queued?
+					{
+					if (settings.logDebugs) log.debug "leaving ${it.label} On, light off is queued"
+					}
+				else
+					{
+					if (settings.logDebugs) log.debug "doing off ${it.label} ${it.id}"
+					it.off()
+					}
 				}
 			}
 		}
