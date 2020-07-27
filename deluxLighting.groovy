@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 27, 2020 v0.2.3 For each lights settings: create an openable section. Makes for easier viewing and adjustment
  *  Jul 26, 2020 v0.2.2 Speed up luxHandler by setting luxMax and luxMin lux points, and lastLux
  *						Add handler hsmStatusHandler, directly processing night mode lights off
  *						Add NightFlag for each lighting device
@@ -92,7 +93,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.2";
+	return "0.2.3";
 	}
 
 def mainPage()
@@ -157,65 +158,60 @@ def mainPage()
 				title: "Optional: Turn off lighting devices with Lux On flag true at this time daily. Leave blank to ignore", required: false
 			input "globalLights", "capability.switch", required: true, multiple: true, submitOnChange: true,
 				title: "One or more Bulbs, Leds or Switches"
-
+			}
 //			for each globalLights get a brightness and optional motion and switch sensors if active leave light on
+		if (globalLights)
+			{
 			globalLights.each
-				{
-				if (settings.globalTimeOff)
+				{itx ->
+					section ("${itx.label} Settings", hideable: true, hidden: true)
 					{
-					input "global${it.id}TimerOffFlag", "bool", required: false,
-						title: "${it.label}<br />Device turns Off with timer<br />Device does not respond to timer Off (Default)"
-					}
-				if (it.hasCommand('setLevel'))
-					{
-					input "global${it.id}Dim", "number", required: false, multiple: false, range: "1..100",
-						title: "${it.label}<br />Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
-					}
-				input "global${it.id}Lux", "number", required: false, multiple: false, range: "1..8000",submitOnChange: true,
-					title: "${it.label}<br />Lux On/Off point 1 to 8000. Leave blank to use Standard Lux settings (Optional)"
-				input "global${it.id}LuxFlagOn", "bool", required: false, defaultValue: false,
-						title: "On/True: Light turns ON when current Lux <= set point<br />Off/False (Default): No automatic Lux on"
-				input "global${it.id}LuxFlagOff", "bool", required: false, defaultValue: false,
-						title: "On/True: Light turns OFF when current Lux > set point<br />Off/False (Default): No automatic Lux off"
-				input "global${it.id}NightFlag", "bool", required: false, defaultValue: false,
-						title: "On/True: Light turns OFF when at HSM armedNight status<br />Off/False (Default): No automatic armedNight off"
-				input "global${it.id}Motions", "capability.motionSensor", required: false, multiple:true, submitOnChange: true,
-					title: "${it.label}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
-				if (settings."global${it.id}Motions")
-					{
+					if (settings.globalTimeOff)
+						{
+						input "global${itx.id}TimerOffFlag", "bool", required: false,
+							title: "${itx.label}<br />Device turns Off with timer<br />Device does not respond to timer Off (Default)"
+						}
+					if (itx.hasCommand('setLevel'))
+						{
+						input "global${itx.id}Dim", "number", required: false, multiple: false, range: "1..100",
+							title: "${itx.label}<br />Brightness Level 1 to 100, leave blank for ON with no level (Optional)"
+						}
+					input "global${itx.id}Lux", "number", required: false, multiple: false, range: "1..8000",submitOnChange: true,
+						title: "${itx.label}<br />Lux On/Off point 1 to 8000. Leave blank to use Standard Lux settings (Optional)"
+					input "global${itx.id}LuxFlagOn", "bool", required: false, defaultValue: false,
+							title: "On/True: Light turns ON when current Lux <= set point<br />Off/False (Default): No automatic Lux on"
+					input "global${itx.id}LuxFlagOff", "bool", required: false, defaultValue: false,
+							title: "On/True: Light turns OFF when current Lux > set point<br />Off/False (Default): No automatic Lux off"
+					input "global${itx.id}NightFlag", "bool", required: false, defaultValue: false,
+							title: "On/True: Light turns OFF when at HSM armedNight status<br />Off/False (Default): No automatic armedNight off"
+					input "global${itx.id}Motions", "capability.motionSensor", required: false, multiple:true, submitOnChange: true,
+						title: "${itx.label}<br />Motion Sensors when active set light On, and used for Off decision (Optional)"
+					if (settings."global${itx.id}Motions")
+						{
 
-					input "global${it.id}MotionMinutes", "number", required: true, defaultValue: 10, range: "1..240",
-						title: "${it.label}<br />Minutes to remain On"
-					input "global${it.id}MotionFlagOn", "bool", required: false, defaultValue: false,
-						title: "${it.label}<br />On/True: Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On with motion<br />"
-					input "global${it.id}MotionFlagOff", "bool", required: false, defaultValue: false,
-						title: "${it.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when motion time expires<br />"
+						input "global${itx.id}MotionMinutes", "number", required: true, defaultValue: 10, range: "1..240",
+							title: "${itx.label}<br />Minutes to remain On"
+						input "global${itx.id}MotionFlagOn", "bool", required: false, defaultValue: false,
+							title: "${itx.label}<br />On/True: Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On with motion<br />"
+						input "global${itx.id}MotionFlagOff", "bool", required: false, defaultValue: false,
+							title: "${itx.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when motion time expires<br />"
+						}
+					input "global${itx.id}Switchs", "capability.switch", required: false, multiple:true, submitOnChange: true,
+						title: "${itx.label}<br />Switches status sets light On (Optional)"
+					if (settings."global${itx.id}Switchs")
+						{
+						input "global${itx.id}SwitchMinutes", "number", required: true, defaultValue: 10, range: "1..240",
+							title: "${itx.label}<br />Minutes to remain On"
+						input "global${itx.id}SwitchFlagOn", "bool", required: false, defaultValue: false,
+							title: "${itx.label}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
+						input "global${itx.id}SwitchFlagOff", "bool", required: false, defaultValue: false,
+							title: "${itx.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
+						}
+//					initially contact open On closed Off used mainly for closets, no timers for starters Jul 24, 2020
+					input "global${itx.id}Contacts", "capability.contactSensor", required: false, multiple:true, submitOnChange: true,
+						title: "${itx.label}<br />Contact that set light On (Optional)"
 					}
-				input "global${it.id}Switchs", "capability.switch", required: false, multiple:true, submitOnChange: true,
-					title: "${it.label}<br />Switches status sets light On (Optional)"
-				if (settings."global${it.id}Switchs")
-					{
-					input "global${it.id}SwitchMinutes", "number", required: true, defaultValue: 10, range: "1..240",
-						title: "${it.label}<br />Minutes to remain On"
-					input "global${it.id}SwitchFlagOn", "bool", required: false, defaultValue: false,
-						title: "${it.label}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
-					input "global${it.id}SwitchFlagOff", "bool", required: false, defaultValue: false,
-						title: "${it.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
-					}
-				input "global${it.id}Contacts", "capability.contactSensor", required: false, multiple:true, submitOnChange: true,
-					title: "${it.label}<br />Contact that set light On (Optional)"
-//				initially contact open On closed Off used mainly for closets, no timers for starters Jul 24, 2020
-/*				settingContacts="global${it.id}Contacts"
-				if (settings."$settingContacts")
-					{
-					input "global${it.id}SwitchMinutes", "number", required: true, defaultValue: 10, range: "1..240",
-						title: "${it.label}<br />Minutes to remain On"
-					input "global${it.id}SwitchFlagOn", "bool", required: false, defaultValue: false,
-						title: "${it.label}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
-					input "global${it.id}SwitchFlagOff", "bool", required: false, defaultValue: false,
-						title: "${it.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
-					}
-*/				}
+				}
 			}
 		}
 	}
