@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 28, 2020 v0.2.4A Add optional dimmer level for motion, switch, contact
+ *  Jul 28, 2020 v0.2.4 Add capability and settings allowing switch, motion, or contacts to operate only in selected hsmStatus states
  *  Jul 27, 2020 v0.2.3 For each lights settings: create an openable section. Makes for easier viewing and adjustment
  *  Jul 26, 2020 v0.2.2 Speed up luxHandler by setting luxMax and luxMin lux points, and lastLux
  *						Add handler hsmStatusHandler, directly processing night mode lights off
@@ -93,7 +95,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.3";
+	return "0.2.4A";
 	}
 
 def mainPage()
@@ -195,6 +197,13 @@ def mainPage()
 							title: "${itx.label}<br />On/True: Lux participates in motion On decision<br />Off/False (Default): Ignore lux, force light to On with motion<br />"
 						input "global${itx.id}MotionFlagOff", "bool", required: false, defaultValue: false,
 							title: "${itx.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when motion time expires<br />"
+						input "global${itx.id}MotionHsmStatus", "enum", options: ["armedAway", "armedHome", "armedNight", "disarmed"], required: false, multiple: true,
+							title: "Motion triggers only in these modes. When none selected, all status trigger action"
+						if (itx.hasCommand('setLevel'))
+							{
+							input "global${itx.id}MotionDim", "number", required: false, multiple: false, range: "1..100",
+								title: "${itx.label}<br />Motion Brightness Level 1 to 100 (Optional)"
+							}
 						}
 					input "global${itx.id}Switchs", "capability.switch", required: false, multiple:true, submitOnChange: true,
 						title: "${itx.label}<br />Switches status sets light On (Optional)"
@@ -206,10 +215,27 @@ def mainPage()
 							title: "${itx.label}<br />On/True: Lux participates in switch On decision<br />Off/False (Default): Ignore lux, force light to On with switch<br />"
 						input "global${itx.id}SwitchFlagOff", "bool", required: false, defaultValue: false,
 							title: "${itx.label}<br />On/True: Lux participates in motion Off decision<br />Off/False (Default): Ignore lux, force light Off when switch time expires<br />"
+						input "global${itx.id}SwitchHsmStatus", "enum", options: ["armedAway", "armedHome", "armedNight", "disarmed"], required: false, multiple: true,
+							title: "Switch triggers only in these modes. When none selected, all status trigger action"
+						if (itx.hasCommand('setLevel'))
+							{
+							input "global${itx.id}SwitchDim", "number", required: false, multiple: false, range: "1..100",
+								title: "${itx.label}<br />Switch Brightness Level 1 to 100 (Optional)"
+							}
 						}
 //					initially contact open On closed Off used mainly for closets, no timers for starters Jul 24, 2020
 					input "global${itx.id}Contacts", "capability.contactSensor", required: false, multiple:true, submitOnChange: true,
 						title: "${itx.label}<br />Contact that set light On (Optional)"
+					if (settings."global${itx.id}Contacts")
+						{
+						input "global${itx.id}ContactHsmStatus", "enum", options: ["armedAway", "armedHome", "armedNight", "disarmed"], required: false, multiple: true,
+							title: "Contact triggers only in these modes. When none selected, all status trigger action"
+						if (itx.hasCommand('setLevel'))
+							{
+							input "global${itx.id}MotionDim", "number", required: false, multiple: false, range: "1..100",
+								title: "${itx.label}<br />Contact Brightness Level 1 to 100 (Optional)"
+							}
+						}
 					}
 				}
 			}
@@ -570,6 +596,7 @@ void deviceHandler(evt)
 	def appTestLux = appLuxCalculate()
 	def settingDevice=""
 	def settingDim=""
+	def settingDeviceDim=""
 	def settingLux=""
 	def settingDvcFlagOn=""
 	def id=""
@@ -588,10 +615,22 @@ void deviceHandler(evt)
 	def millisToTimeOff= Date.parse("yyyy-MM-dd'T'HH:mm:ss", globalTimeOff).getTime() - now()
 	if (settings.logDebugs) log.debug "Millis $millisToTimeOff"
 	if (settings.logDebugs)log.debug  "deviceHandler processing: ${evt.getDevice().label} $triggerId triggerText $triggerText"
+	def hsmStateValid=true
+
 	state.dvcXref[triggerId].each
 		{
-
+		hsmStateValid=true
 		id=globalLights[it].id
+		if (settings."global${id}${triggerText}HsmStatus")
+			{
+			if (settings."global${id}${triggerText}HsmStatus".contains(location.hsmStatus))
+				{}
+			else
+				hsmStateValid=false
+			}
+
+		if (settings.logDebugs) log.debug settings."global${id}${triggerText}HsmStatus"
+		if (settings.logDebugs) log.debug "${id}" + ' '+ location.hsmStatus +' ' + hsmStateValid +' '+ triggerSensor.label
 		qName="Q${id}"
 		if (settings.logDebugs)log.debug "process ${globalLights[it].label} ids: $triggerId $id"
 		settingDevice="global${id}${triggerText}s"				//name of motion or switch setting sensor controlling light
@@ -620,7 +659,7 @@ void deviceHandler(evt)
 		else
 			testLux = appTestLux
 
-		if (globalLights[it].currentValue('switch') == 'on')	//light is already On update off time if queued or withing 20 minutes of timer off
+		if (globalLights[it].currentValue('switch') == 'on' && hsmStateValid)	//light is already On update off time if queued or withing 20 minutes of timer off
 			{
 			if (millisToTimeOff >=0 && millisToTimeOff < 1200000)	//keep actives on at forceoff time q at 20 minutes
 				{
@@ -631,18 +670,26 @@ void deviceHandler(evt)
 				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
 			}
 		else
-		if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
+		if (hsmStateValid &&(!(settings."$settingDvcFlagOn") || testLux >= currLux))
 			{
 			runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
 			settingDim="global${id}Dim"
+			settingDeviceDim="global${id}${triggerText}Dim"
+			if (settings.logDebugs) log.debug "$settingDeviceDim:" + settings."$settingDeviceDim"
+			if (settings."$settingDeviceDim")
+				{
+				if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing setlevel ${globalLights[it].label} ${id} ${settingDeviceDim}: " + settings."$settingDeviceDim"
+				globalLights[it].setLevel(settings."$settingDeviceDim", 3)
+				}
+			else
 			if (settings."$settingDim")
 				{
-				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing setlevel ${globalLights[it].label} ${id} ${settingDim}: " + settings."$settingDim"
-				globalLights[it].setLevel(settings."$settingDim", 5)
+				if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing setlevel ${globalLights[it].label} ${id} ${settingDim}: " + settings."$settingDim"
+				globalLights[it].setLevel(settings."$settingDim", 3)
 				}
 			else
 				{
-				if (settings.logDebugs)log.debug "deluxLighting deviceHandler doing On ${globalLights[it].label} ${id} ${settingDim} not found"
+				if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing On ${globalLights[it].label} ${id} ${settingDim} not found"
 				globalLights[it].on()
 				}
 			}
@@ -654,14 +701,25 @@ void contactHandler(evt)
 	def triggerSensor = evt.getDevice()
 	def triggerId = evt.getDevice().id		//id of triggering device
 	def settingDevice = ""
+	def settingDeviceDim=""
 	def allContactsClosed=true
 	if (settings.logDebugs) log.debug  "contactHandler entered: ${evt.getDevice().label} ${evt.value} $triggerId"
 	if (evt.value == 'open')
 		{
 		state.dvcXref[triggerId].each
 			{
-			settings.globalLights[it].on()
-//			log.debug "light on"
+			settingDeviceDim="global${id}ContactDim"
+			if (settings.logDebugs) log.debug "$settingDeviceDim:" + settings."$settingDeviceDim"
+			if (settings."$settingDeviceDim")
+				{
+				if (settings.logDebugs) log.debug "deluxLighting deviceHandler doing setlevel ${globalLights[it].label} ${id} ${settingDeviceDim}: " + settings."$settingDeviceDim"
+				globalLights[it].setLevel(settings."$settingDeviceDim", 3)
+				}
+			else
+				{
+				settings.globalLights[it].on()
+//				log.debug "light on"
+				}
 			}
 		}
 	else
@@ -810,7 +868,7 @@ void Q3(mapData=false)
 	if (mapData)
 		{
 		atomicState.Q3=false
-		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
+		qOffHandler(mapData)		//light may or may not be turned off based on lux and system status
 		}
 	}
 
