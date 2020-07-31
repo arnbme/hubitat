@@ -22,6 +22,11 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *	Jul 31, 2020 v0.2.5 issue LR and front Door light turned off upon arrival home. Cause Qnnnn created on Ring switch
+ *							updated yesterdays logic
+ *	Jul 30, 2020 v0.2.5 issue: Light shutting off lux test point when it should not. Cause: atomicState.Qnnnn was not set.
+ *						Adjust logic of deviceHandler to insure setting Qnnnn.
+ *						Had previously stopped setting Qnnnn as much as possible, but it must be set to avoid this issue
  *  Jul 28, 2020 v0.2.4A Add optional dimmer level for motion, switch, contact
  *  Jul 28, 2020 v0.2.4 Add capability and settings allowing switch, motion, or contacts to operate only in selected hsmStatus states
  *  Jul 27, 2020 v0.2.3 For each lights settings: create an openable section. Makes for easier viewing and adjustment
@@ -95,7 +100,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.4A";
+	return "0.2.5";
 	}
 
 def mainPage()
@@ -166,7 +171,7 @@ def mainPage()
 			{
 			globalLights.each
 				{itx ->
-					section ("${itx.label} Settings", hideable: true, hidden: true)
+					section ("${itx.label} Settings, Id:${itx.id}", hideable: true, hidden: true)
 					{
 					if (settings.globalTimeOff)
 						{
@@ -659,18 +664,22 @@ void deviceHandler(evt)
 		else
 			testLux = appTestLux
 
-		if (globalLights[it].currentValue('switch') == 'on' && hsmStateValid)	//light is already On update off time if queued or withing 20 minutes of timer off
+		if (!hsmStateValid)											//Ignore, invalid armed state
+			{}
+		else
+		if (globalLights[it].currentValue('switch') == 'on')		//light is already On
 			{
-			if (millisToTimeOff >=0 && millisToTimeOff < 1200000)	//keep actives on at forceoff time q at 20 minutes
-				{
-				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
-				}
-			else
 			if (atomicState."$qName")
+				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
+			else
+			if (!(settings."$settingDvcFlagOn"))
+				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
+			else
+			if (testLux >= currLux && ((seconds * 1000) > millisToTimeOff))
 				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
 			}
 		else
-		if (hsmStateValid &&(!(settings."$settingDvcFlagOn") || testLux >= currLux))
+		if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
 			{
 			runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
 			settingDim="global${id}Dim"
