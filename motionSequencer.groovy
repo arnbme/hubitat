@@ -1,4 +1,5 @@
 /**
+ * DOES NOT WORK AS INTENDED NOT BEING USED
  *  Import Url:   https://raw.githubusercontent.com/arnbme/hubitat/master/motionSequencer.groovy
  *
  *  motionSequencer App
