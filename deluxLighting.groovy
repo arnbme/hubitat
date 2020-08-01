@@ -659,7 +659,7 @@ void deviceHandler(evt)
 		if (settings.logDebugs)log.debug "${globalLights[it].label} on minutes is ${minutes}"
 		seconds=minutes * 60
 
-		settingLux="global${it.id}Lux"
+		settingLux="global${id}Lux"
 		if (settings."$settingLux")
 			testLux=settings."$settingLux"
 		else
