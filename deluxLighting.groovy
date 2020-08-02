@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *	Aug 01, 2020 v0.2.6 deviceHandler method globalTimeOff may be one day old, add one day of millis when millisToTimeOff is negative
  *	Jul 31, 2020 v0.2.5 issue LR and front Door light turned off upon arrival home. Cause Qnnnn created on Ring switch
  *							updated yesterdays logic
  *	Jul 30, 2020 v0.2.5 issue: Light shutting off lux test point when it should not. Cause: atomicState.Qnnnn was not set.
@@ -100,7 +101,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.5";
+	return "0.2.6";
 	}
 
 def mainPage()
@@ -616,9 +617,13 @@ void deviceHandler(evt)
 //	def millis = dateTime.getTime()
 //	log.debug "$dateTime $millis ${now()}"
 //	log.debug "${millis-now()}"
-//	millis to time off - 20 minutes, start setting q and runin
 	def millisToTimeOff= Date.parse("yyyy-MM-dd'T'HH:mm:ss", globalTimeOff).getTime() - now()
-	if (settings.logDebugs) log.debug "Millis $millisToTimeOff"
+	if (settings.logDebugs) log.debug "${settings.globalTimeOff} Millis: $millisToTimeOff"
+	if (millisToTimeOff < 0)
+		{
+		millisToTimeOff += 86400000				//add 1 day of milliseconds if negative
+		if (settings.logDebugs)log.debug "${settings.globalTimeOff} Millis: $millisToTimeOff adjusted for negative"
+		}
 	if (settings.logDebugs)log.debug  "deviceHandler processing: ${evt.getDevice().label} $triggerId triggerText $triggerText"
 	def hsmStateValid=true
 
@@ -656,7 +661,7 @@ void deviceHandler(evt)
 				}
 			}
 		minutes=settings."$settingDeviceMinutes"
-		if (settings.logDebugs)log.debug "${globalLights[it].label} on minutes is ${minutes}"
+		if (settings.logDebugs) log.debug "${globalLights[it].label} on minutes is ${minutes}"
 		seconds=minutes * 60
 
 		settingLux="global${id}Lux"
@@ -670,14 +675,18 @@ void deviceHandler(evt)
 		else
 		if (globalLights[it].currentValue('switch') == 'on')		//light is already On
 			{
+			if (settings.logDebugs) log.debug "deluxLighting deviceHandler device is on, testLux: $testLux currLux: $currLux and timeMillis: ${seconds * 1000}, OffMillis: $millisToTimeOff"
 			if (atomicState."$qName")
+				{
+				if (settings.logDebugs) log.debug "deluxLighting deviceHandler extending timer light on runInQueue $qName exists"
 				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
-			else
-			if (!(settings."$settingDvcFlagOn"))
-				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
+				}
 			else
 			if (testLux >= currLux && ((seconds * 1000) > millisToTimeOff))
+				{
+				if (settings.logDebugs) log.debug "deluxLighting deviceHandler creating queue, testLux $testLux >= currLux $currLux and ontime ${seconds * 1000} > $millisToTimeOff"
 				runInQueue(seconds,qName, it, id, settingDevice, triggerIndex, triggerId)
+				}
 			}
 		else
 		if (!(settings."$settingDvcFlagOn") || testLux >= currLux)
