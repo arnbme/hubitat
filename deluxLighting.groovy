@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *	Aug 03, 2020 v0.2.7 change debug and pause to buttons
  *	Aug 01, 2020 v0.2.6 deviceHandler method globalTimeOff may be one day old, add one day of millis when millisToTimeOff is negative
  *	Jul 31, 2020 v0.2.5 issue LR and front Door light turned off upon arrival home. Cause Qnnnn created on Ring switch
  *							updated yesterdays logic
@@ -101,19 +102,36 @@ preferences {
 
 def version()
 	{
-	return "0.2.6";
+	return "0.2.7";
 	}
+
+def debugs(){
+	def txt=""
+	if (logDebugs)
+		txt = " (Debugging Mode)"
+	if (globalDisable)
+		txt += " (Paused)"
+	return txt
+}
 
 def mainPage()
 	{
-	dynamicPage(name: "mainPage", title: "(V${version()}) Lux Lighting Settings", install: true, uninstall: true)
+	dynamicPage(name: "mainPage", title: "(V${version()}) Lux Lighting Settings${debugs()}", install: true, uninstall: true)
 		{
 		section
 			{
-			input "globalDisable", "bool", required: true, defaultValue: false,
-				title: "Disable All Functions. Default: Off/False"
-			input "logDebugs", "bool", required: true, defaultValue: false,
-				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
+			if (settings.logDebugs)
+				input "buttonDebugOff", "button", title: "Stop Debug Logging"
+			else
+				input "buttonDebugOn", "button", title: "Debug Logging For 30 minutes"
+			if (settings.globalDisable)
+				input "buttonResume", "button", title: "Resume"
+			else
+				input "buttonPause", "button", title: "Pause"
+//			input "globalDisable", "bool", required: true, defaultValue: false,
+//				title: "Disable All Functions. Default: Off/False"
+//			input "logDebugs", "bool", required: true, defaultValue: false,
+//				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
 			input "globalTestLux", "number", required: true, multiple: false, range: "1..10000",
 				title: "Standard Lux point"
 			input "globalDateLux", "number", required: false, multiple: false, range: "1..10000",submitOnChange: true,
@@ -249,117 +267,120 @@ def mainPage()
 	}
 
 void installed() {
-    log.info "Installed with settings: ${settings}"
-	initialize()
-}
+    if (settings.globalDisable)
+		log.info "Installed in disabled (paused) mode"
+	else
+		{
+		initialize()
+    	log.info "Installed with settings: ${settings}"
+		}
+	}
 
-void updated() {
-    log.info "Updated with settings: ${settings}"
+void updated()
+	{
     unsubscribe()
-    initialize()
-}
+    if (settings.globalDisable)
+		log.info "Updated in disabled (paused) mode"
+	else
+		{
+		unschedule(timeOffHandler)		//clear daily time off event
+		initialize()
+    	log.info "Updated with settings: ${settings}"
+		}
+	}
 
 void initialize()
 	{
 	def dvcXref = [:]
 	def maxLux = new Integer("0")
 	def minLux = new Integer("999999")
-	if(settings.logDebugs)
-		runIn(1800,debugOff)		//turns off debug logging after 30 min
-	else
-		unschedule(debugOff)
-	unschedule(timeOffHandler)		//clear any pending scheduled events
-	if (globalDisable)
-		{}
-	else
+//	Create two program defined globals for start and end Lux date
+	if (globalDateLux)
 		{
-//		Create two program defined globals for start and end Lux date
-		if (globalDateLux)
-			{
-			Map months = [January: '01',
-			February: '02',
-			March: '03',
-			April: '04',
-			May: '05',
-			June: '06',
-			July: '07',
-			August: '08',
-			September: '09',
-			October: '10',
-			November: '11',
-			December: '12']
-			def beginMMDD=""
-			def endMMDD=""
-			if (globalFromDate < '10')
-				beginMMDD = months[globalFromMonth] + '0' + globalFromDate as String
-			else
-				beginMMDD= months[globalFromMonth]+globalFromDate as String
-			if (globalToDate < '10')
-				endMMDD = months[globalToMonth] + '0' + globalToDate as String
-			else
-				endMMDD= months[globalToMonth]+globalToDate as String
-			app.updateSetting("globalFromMMDD",[value: beginMMDD,type:"string"])
-			app.updateSetting("globalToMMDD",[value: endMMDD, type:"string"])
-			}
+		Map months = [January: '01',
+		February: '02',
+		March: '03',
+		April: '04',
+		May: '05',
+		June: '06',
+		July: '07',
+		August: '08',
+		September: '09',
+		October: '10',
+		November: '11',
+		December: '12']
+		def beginMMDD=""
+		def endMMDD=""
+		if (globalFromDate < '10')
+			beginMMDD = months[globalFromMonth] + '0' + globalFromDate as String
+		else
+			beginMMDD= months[globalFromMonth]+globalFromDate as String
+		if (globalToDate < '10')
+			endMMDD = months[globalToMonth] + '0' + globalToDate as String
+		else
+			endMMDD= months[globalToMonth]+globalToDate as String
+		app.updateSetting("globalFromMMDD",[value: beginMMDD,type:"string"])
+		app.updateSetting("globalToMMDD",[value: endMMDD, type:"string"])
+		}
 
-		subscribe(globalLuxSensors, "illuminance", luxHandler)
-		subscribe(location, "hsmStatus", hsmStatusHandler)
-		if (globalTimeOff)
-			schedule(globalTimeOff, timeOffHandler)
-		def i=-1
-		globalLights.each
+	subscribe(globalLuxSensors, "illuminance", luxHandler)
+	subscribe(location, "hsmStatus", hsmStatusHandler)
+	if (globalTimeOff)
+		schedule(globalTimeOff, timeOffHandler)
+	def i=-1
+	globalLights.each
+		{
+		if (settings."global${it.id}Lux")
 			{
-			if (settings."global${it.id}Lux")
-				{
-				if (settings."global${it.id}Lux" < minLux)
-					minLux=settings."global${it.id}Lux"
-				if (settings."global${it.id}Lux" > maxLux)
-					maxLux=settings."global${it.id}Lux"
-				}
-			i++
-			settingMotions="global${it.id}Motions"
-			if (settings."$settingMotions")
-				{
-				settings."global${it.id}Motions".each
-					{it2 ->
-					if (dvcXref[it2.id])
-						dvcXref [it2.id] << i
-					else
-						dvcXref [it2.id] = [i]
-					}
-				subscribe (settings."$settingMotions", "motion.active", deviceHandler)
-				}
-			settingSwitchs="global${it.id}Switchs"
-			if (settings."$settingSwitchs")
-				{
-				settings."global${it.id}Switchs".each
-					{it2 ->
-					if (dvcXref[it2.id])
-						dvcXref [it2.id] << i
-					else
-						dvcXref [it2.id] = [i]
-					}
-				subscribe (settings."$settingSwitchs", "switch.on", deviceHandler)
-				}
-			if (settings."global${it.id}Contacts")
-				{
-				settings."global${it.id}Contacts".each
-					{it2 ->
-					if (dvcXref[it2.id])
-						dvcXref [it2.id] << i
-					else
-						dvcXref [it2.id] = [i]
-					}
-				subscribe (settings."global${it.id}Contacts", "contact", contactHandler)
-				}
+			if (settings."global${it.id}Lux" < minLux)
+				minLux=settings."global${it.id}Lux"
+			if (settings."global${it.id}Lux" > maxLux)
+				maxLux=settings."global${it.id}Lux"
 			}
-		state.maxLux=maxLux
-		state.minLux=minLux
-		if (state?.lastlux==null)
-			state.lastLux=currLuxCalculate()
-		log.info "minLux: $minLux maxLux: $maxLux lastLux: ${state.lastLux}"
-		log.info "trigger device cross reference $dvcXref"
-		state.dvcXref=dvcXref
+		i++
+		settingMotions="global${it.id}Motions"
+		if (settings."$settingMotions")
+			{
+			settings."global${it.id}Motions".each
+				{it2 ->
+				if (dvcXref[it2.id])
+					dvcXref [it2.id] << i
+				else
+					dvcXref [it2.id] = [i]
+				}
+			subscribe (settings."$settingMotions", "motion.active", deviceHandler)
+			}
+		settingSwitchs="global${it.id}Switchs"
+		if (settings."$settingSwitchs")
+			{
+			settings."global${it.id}Switchs".each
+				{it2 ->
+				if (dvcXref[it2.id])
+					dvcXref [it2.id] << i
+				else
+					dvcXref [it2.id] = [i]
+				}
+			subscribe (settings."$settingSwitchs", "switch.on", deviceHandler)
+			}
+		if (settings."global${it.id}Contacts")
+			{
+			settings."global${it.id}Contacts".each
+				{it2 ->
+				if (dvcXref[it2.id])
+					dvcXref [it2.id] << i
+				else
+					dvcXref [it2.id] = [i]
+				}
+			subscribe (settings."global${it.id}Contacts", "contact", contactHandler)
+			}
+		}
+	state.maxLux=maxLux
+	state.minLux=minLux
+	if (state?.lastlux==null)
+		state.lastLux=currLuxCalculate()
+	log.info "minLux: $minLux maxLux: $maxLux lastLux: ${state.lastLux}"
+	log.info "trigger device cross reference $dvcXref"
+	state.dvcXref=dvcXref
 
 //		state.dvcXref["1057"].each
 //			{
@@ -369,13 +390,44 @@ void initialize()
 //			{
 //			log.debug globalLights[it].label
 //			}
-		}
 //	log.debug "getevents returned " + getEvents('global321Switch','on')  		//used to test getEvents on Done
+	}
+
+//	Process Pause and debug buttons
+void appButtonHandler(btn)
+	{
+	def qName=""
+	switch(btn)
+		{
+		case "buttonDebugOff":
+			debugOff()
+			break
+		case "buttonDebugOn":
+			app.updateSetting("logDebugs",[value:"true",type:"bool"])
+			runIn(1800,debugOff)		//turns off debug logging after 30 Minutes
+			break
+		case "buttonPause":
+			app.updateSetting("globalDisable",[value:"true",type:"bool"])
+			unschedule()
+			unsubscribe()
+			globalLights.each
+				{
+				qName="Q${it.id}"
+				if (atomicState."${qName}")
+					atomicState."${qName}"=false
+				}
+			break
+		case "buttonResume":
+			app.updateSetting("globalDisable",[value:"false",type:"bool"])
+			initialize()
+			break
+		}
 	}
 
 void debugOff(){
 //	stops debug logging
 	log.info "deluxLighting: debug logging disabled"
+	unschedule(debugOff)
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
 
