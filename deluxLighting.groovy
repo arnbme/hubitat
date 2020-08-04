@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *	Aug 04, 2020 v0.2.8 Lights not turning on when switching from Night mode, add statusChange flag to luxHandler
+ *							and modify hsmStatusHandler setting it the flag true
  *	Aug 03, 2020 v0.2.7 change debug and pause to buttons
  *	Aug 01, 2020 v0.2.6 deviceHandler method globalTimeOff may be one day old, add one day of millis when millisToTimeOff is negative
  *	Jul 31, 2020 v0.2.5 issue LR and front Door light turned off upon arrival home. Cause Qnnnn created on Ring switch
@@ -102,7 +104,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.7";
+	return "0.2.8";
 	}
 
 def debugs(){
@@ -481,7 +483,7 @@ def appLuxCalculate()
 
 //	onlyLight deprecated in V015B
 //  forceoff deprecated v019
-void luxHandler(evt,forceOff=false,onlyLight=false)
+void luxHandler(evt,forceOff=false,onlyLight=false,statusChange=false)
 	{
 	if (settings.logDebugs) log.debug "deluxLighting: luxHandler entered"
 	def currLux=currLuxCalculate()
@@ -497,6 +499,9 @@ void luxHandler(evt,forceOff=false,onlyLight=false)
 	if (settings.logDebugs) log.debug "maxLux: $maxLux, minLux: $minLux, lastLux: $lastLux, currLux; $currLux"
 	if (settings.logDebugs) log.debug "maxLux: ${maxLux.class.name}, minLux: ${minLux.class.name}, lastLux: ${lastLux.class.name}, currLux; ${currLux.class.name}"
 
+	if (statusChange)
+		{}
+	else
 	if (currLux > maxLux)
 		{
 		if (lastLux > maxLux)
@@ -626,7 +631,7 @@ void hsmStatusHandler(evt)
 		{}
 	else
 	if (evt.value!='armedNight')
-		luxHandler(evt)
+		luxHandler(evt,false,false,true)		//signal a status change
 	else
 	{
 		settings.globalLights.each
