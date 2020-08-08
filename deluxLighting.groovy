@@ -22,6 +22,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *	Aug 07, 2020 v1.0.0 Change to parent with children queue apps eliminating manually coded queue code methods
+ *						Module deluxLightingQueue must be installed
  *	Aug 04, 2020 v0.2.8 Lights not turning on when switching from Night mode, add statusChange flag to luxHandler
  *							and modify hsmStatusHandler setting it the flag true
  *	Aug 03, 2020 v0.2.7 change debug and pause to buttons
@@ -104,7 +106,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.8";
+	return "1.0.0";
 	}
 
 def debugs(){
@@ -291,6 +293,16 @@ void updated()
 		}
 	}
 
+def uninstalled()
+	{
+	def children=getAllChildApps()
+	children.each
+		{
+		deleteChildApp(it.id)
+		log.info "deluxLighting uninstalled child ${it.label}"
+		}
+	}
+
 void initialize()
 	{
 	def dvcXref = [:]
@@ -384,6 +396,9 @@ void initialize()
 	log.info "trigger device cross reference $dvcXref"
 	state.dvcXref=dvcXref
 
+	buildChildApps()
+
+
 //		state.dvcXref["1057"].each
 //			{
 //			log.debug globalLights[it].label
@@ -395,10 +410,56 @@ void initialize()
 //	log.debug "getevents returned " + getEvents('global321Switch','on')  		//used to test getEvents on Done
 	}
 
+//	build child queue apps
+void buildChildApps()
+	{
+	def qName=""
+	def childObj
+
+//	rather than build child apps during initialization do it dynamically as needed in runInQueue method, leave code just in case
+//	add new device queues
+/*	globalLights.each
+		{
+		qName="Q${it.id}"
+		childObj = getChildAppByLabel(qName)
+		if (childObj==null)
+			{
+			log.info "creating $qName childapp"
+			addChildApp("arnbme","deluxLightingQueue",qName,[:])
+			}
+		else
+			if (settings.logDebugs) log.debug "$qName child app exists"
+		}
+*/
+//	remove deleted device queue child apps
+	def children=getAllChildApps()
+	def lightExists=false
+	children.each
+		{
+		lightExists=false
+		globalLights.each
+			{light->
+			qName="Q${light.id}"
+			if (it.label == qName)
+				{
+				if (settings.logDebugs) log.debug "light exists $qName appid is ${it.id}"
+				lightExists=true
+				}
+			}
+		if (!lightExists)
+			{
+			deleteChildApp(it.id)
+			atomicState."$qName"=null
+			log.info "Removed child $qName appid is ${it.id}"
+			}
+		}
+	}
+
 //	Process Pause and debug buttons
 void appButtonHandler(btn)
 	{
 	def qName=""
+	def childObj
 	switch(btn)
 		{
 		case "buttonDebugOff":
@@ -415,6 +476,11 @@ void appButtonHandler(btn)
 			globalLights.each
 				{
 				qName="Q${it.id}"
+				childObj = getChildAppByLabel(qName)
+				if (childObj!=null)
+					{
+					childObj.unschedule()
+					}
 				if (atomicState."${qName}")
 					atomicState."${qName}"=false
 				}
@@ -835,122 +901,24 @@ void contactHandler(evt)
 
 void runInQueue(seconds, qName, lightIndex, lightId, triggerSettingName, triggerIndex, triggerId)
 	{
-	try {
-		if (settings.logDebugs) log.debug "deluxLighting runInQueue: seconds:$seconds, qName:$qName, lightIndex:$lightIndex,lightId:$lightId, triggerSettingName:$triggerSettingName, triggerIndex:$triggerIndex, triggerId:$triggerId"
-		"${qName}"()									//When method exists queue it to the method
-		runIn (seconds, "${qName}",
-						[data: [lightIndex: lightIndex,
-						lightId: lightId,
-						triggerSettingName: triggerSettingName,
-						triggerIndex: triggerIndex,
-						triggerId: triggerId]])
-		atomicState."${qName}"=true
-		}
-	catch (e)
+//	Use child app to generate a unique queue id. Hubitat restriction prevents using Meta code to generate methods
+//	when child app does not exist, create it rather than build during initialization
+	if (settings.logDebugs) log.debug "deluxLighting runInQueue: seconds:$seconds, qName:$qName, lightIndex:$lightIndex,lightId:$lightId, triggerSettingName:$triggerSettingName, triggerIndex:$triggerIndex, triggerId:$triggerId"
+	def childObj = getChildAppByLabel(qName)
+	if (childObj==null)
 		{
-		log.warn "deluxLighting runInQueue: Using default runIn queue, please code $qName method"
-		runIn (seconds, "qOffHandler",
-						[data: [lightIndex: lightIndex,
-						lightId: lightId,
-						triggerSettingName: triggerSettingName,
-						triggerIndex: triggerIndex,
-						triggerId: triggerId], overwrite: false ])
+		log.info "deluxLighting creating child app $qName"
+		addChildApp("arnbme","deluxLightingQueue",qName,[:])
+		childObj = getChildAppByLabel(qName)
 		}
-	}
-
-/*	deprecated in V015B
-def getEvents(settingDevice,deviceValue,minutes)
-	{
-	if (settings.logDebugs) log.debug "LuxLighing getEvents entered, Device: $settingDevice deviceValue: $deviceValue Minutes: $minutes"
-	def	returnValue=false
-	if (settings."$settingDevice")
-		{
-		if (settings.logDebugs) log.debug "getEvents entered ${settingDevice}"
-		def events = settings."$settingDevice".events(max: 10)
-		events.find
-			{
-			if (it.value == deviceValue)
-				{
-				millisec= (minutes * 60000) + 1
-				if ((now() - it.date.getTime()) < millisec)		//less than time on minutes in milliseconds?
-					{
-					if (settings.logDebugs) log.debug "getEvents less than 10 minutes " + (now() - it.date.getTime())
-					returnValue=true
-					}
-				else
-					{
-					if (settings.logDebugs) log.debug "getEvents more than 10 minutes " + (now() - it.date.getTime())
-					}
-				return true
-				}
-			else
-				{
-				if (settings.logDebugs) log.debug "getEvents not an active event ${it.value}"
-				return false
-				}
-			}
-		}
-	if (settings.logDebugs) log.debug "getEvents return value is $returnValue"
-	return returnValue
-	}
-*/
-/* runIn queues eliminate overwrite: false reducing overhead for busy switch or motion sensor
- * The following Qnnnn routines are manually coded until I figure out how to generate them wih a Groovy Macro
- * They allow the device runIn to work with overwrite true, eliminating extra timeout processing
- * user should code one per globalLights defined device.id with a related switch or motion sensor
- */
-void Q1288(mapData=false)
-	{
-	if (settings.logDebugs) log.debug "deluxLighting Q1288 entered ${mapData}"
-	if (mapData)
-		{
-		atomicState.Q1288=false
-		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
-		}
-	}
-
-void Q1281(mapData=false)
-	{
-	if (settings.logDebugs) log.debug "deluxLighting Q1281 entered ${mapData}"
-	if (mapData)
-		{
-		atomicState.Q1281=false
-		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
-		}
-	}
-
-void Q321(mapData=false)
-	{
-	if (settings.logDebugs) log.debug "deluxLighting Q321 entered ${mapData}"
-	if (mapData)
-		{
-		atomicState.Q321=false
-		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
-		}
-	}
-
-void Q2(mapData=false)
-	{
-	if (settings.logDebugs) log.debug "deluxLighting Q2 entered ${mapData}"
-	if (mapData)
-		{
-		atomicState.Q2=false
-		qOffHandler(mapData)		//light may or may not be turned off based on lux and system satus
-		}
-	}
-void Q3(mapData=false)
-	{
-	if (settings.logDebugs) log.debug "deluxLighting Q3 entered ${mapData}"
-	if (mapData)
-		{
-		atomicState.Q3=false
-		qOffHandler(mapData)		//light may or may not be turned off based on lux and system status
-		}
+	childObj.runInQueue (seconds, qName, lightIndex, lightId, triggerSettingName, triggerIndex, triggerId)
+	atomicState."${qName}"=true
 	}
 
 void qOffHandler(mapData)
 	{
-/*		runIn and map data formats
+/*		V1.0.0 now called by child app qOffHandler method
+		runIn and map data formats
 		runIn (seconds, "${qName}",
 						data: ["lightIndex": lightIndex,
 						"lightId": lightId,
@@ -968,7 +936,8 @@ void qOffHandler(mapData)
 	log.debug settings."${mapData.triggerSettingName}".id[mapData.triggerIndex]+' '+settings."${mapData.triggerSettingName}".id[mapData.triggerIndex].class.name
 	log.debug mapData.triggerId +' '+ mapData.triggerId.class.name
 */
-
+	def qName="Q${mapData.lightId}"
+	atomicState."$qName"=false
 //	Verify the mapData remains valid. It's a precaution against an interim settings save. Better to leave a light on, than creating an error
 
 	if (settings.globalLights.id[mapData.lightIndex] == mapData.lightId &&
