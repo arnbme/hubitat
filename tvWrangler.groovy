@@ -31,6 +31,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Aug 09, 2020 v0.0.1 Make codes external text fields, taken from IrBlaster
  *  Jul 04, 2020 v0.0.0 Create
  */
 
@@ -51,7 +52,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.0";
+	return "0.0.1";
 	}
 
 def mainPage()
@@ -66,8 +67,11 @@ def mainPage()
 				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
 			input "globalIrBlaster", "capability.actuator", required: true, multiple: false,
 				title: "One IR Blaster"
+			input "globalTvPower","text",required:true,title:"Name of TV Power Code"
+			input "globalAudioPower","text",required:false,title:"Name of Audio Power Code, Leave blank to ignore"
+			input "globalCablePower","text",required:false,title:"Name of Cable Box Power Code, leave blank to ignore"
 			input "globalVirtualSwitch", "capability.switch", required: true, multiple: false,
-				title: "One Virtual Switch"
+				title: "One Virtual Switch, used on a Dashboard triggering On and Off"
 			}
 		}
 	}
@@ -125,16 +129,24 @@ void switchHandler(evt)
 		state.lastState=evt.value
 		if (evt.value == 'on')
 			{
-			globalIrBlaster.SendStoredCode('Cable On')
-			globalIrBlaster.SendStoredCode('tvPower')
-			pauseExecution(1000)						//Wait for Tv to get partially on, avoiding audio pop sound
-			globalIrBlaster.SendStoredCode('Audio power')
+			if (settings.globalCablePower)
+				globalIrBlaster.SendStoredCode(settings.globalCablePower)
+			if (settings.globalTvPower)
+				globalIrBlaster.SendStoredCode(settings.globalTvPower)
+			if (settings.globalAudioPower)
+				{
+				pauseExecution(1000)						//Wait for Tv to get partially on, avoiding audio pop sound
+				globalIrBlaster.SendStoredCode(settings.globalAudioPower)
+				}
 			}
 		else
 			{
-			globalIrBlaster.SendStoredCode('Audio power')
-			globalIrBlaster.SendStoredCode('tvPower')
-			globalIrBlaster.SendStoredCode('Cable On')
+			if (settings.globalAudioPower)
+				globalIrBlaster.SendStoredCode(settings.globalAudioPower)
+			if (settings.globalTvPower)
+				globalIrBlaster.SendStoredCode(settings.globalTvPower)
+			if (settings.globalCablePower)
+				globalIrBlaster.SendStoredCode(settings.globalCablePower)
 			}
 		}
 	}
