@@ -31,6 +31,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Aug 10, 2020 v0.0.2 Make debugging a button
  *  Aug 09, 2020 v0.0.1 Make codes external text fields, taken from IrBlaster
  *  Jul 04, 2020 v0.0.0 Create
  */
@@ -52,19 +53,21 @@ preferences {
 
 def version()
 	{
-	return "0.0.1";
+	return "0.0.2";
 	}
 
 def mainPage()
 	{
-	dynamicPage(name: "main", title: "Mini Split Settings", install: true, uninstall: true)
+	dynamicPage(name: "mainPage", title: "TV Wrangler V${version()} Settings", install: true, uninstall: true)
 		{
 		section
 			{
+			if (settings.logDebugs)
+				input "buttonDebugOff", "button", title: "Stop Debug Logging"
+			else
+				input "buttonDebugOn", "button", title: "Debug For 30 minutes"
 			input "globalDisable", "bool", required: true, defaultValue: false,
 				title: "Disable All Functions. Default: Off/False"
-			input "logDebugs", "bool", required: true, defaultValue: false,
-				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
 			input "globalIrBlaster", "capability.actuator", required: true, multiple: false,
 				title: "One IR Blaster"
 			input "globalTvPower","text",required:true,title:"Name of TV Power Code"
@@ -103,9 +106,25 @@ def initialize()
 		}
 	}
 
-void logsOff(){
+//	Process Pause and debug buttons
+void appButtonHandler(btn)
+	{
+	switch(btn)
+		{
+		case "buttonDebugOff":
+			debugOff()
+			break
+		case "buttonDebugOn":
+			app.updateSetting("logDebugs",[value:"true",type:"bool"])
+			runIn(1800,debugOff)		//turns off debug logging after 30 Minutes
+			break
+		}
+	}
+
+void debugOff(){
 //	stops debug logging
 	log.info "tvWrangler: debug logging disabled"
+	unschedule(debugOff)
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
 
