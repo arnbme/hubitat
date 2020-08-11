@@ -31,6 +31,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Aug 11, 2020 v0.0.3 fix minor but with debugging
  *  Aug 10, 2020 v0.0.2 Make debugging a button
  *  Aug 09, 2020 v0.0.1 Make codes external text fields, taken from IrBlaster
  *  Jul 04, 2020 v0.0.0 Create
@@ -53,7 +54,7 @@ preferences {
 
 def version()
 	{
-	return "0.0.2";
+	return "0.0.3";
 	}
 
 def mainPage()
@@ -94,10 +95,6 @@ def updated() {
 
 def initialize()
 	{
-	if(settings.logDebugs)
-		runIn(1800,logsOff)			// turns off debug logging after 30 min
-	else
-		unschedule(logsOff)
 	if (globalDisable)
 		{}
 	else
