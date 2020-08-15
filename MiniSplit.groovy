@@ -70,6 +70,11 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Aug 15, 2020 v0.1.1 Add optional command queueing to buffer and remove many unneeded commands that may conflict
+ *							due to commands entered from dashboard such as temperature down or up tapping on icon
+ *							This is in addition to the Temperature Handler delay
+ *						add optional input setting for number of milliseconds to delay command runin from 0 to 2000 default 1000
+ *							This slows things down a little but hopefully stops a deluge of commands and IR triggering
  *  Jul 19, 2020 v0.1.0 Add optional user coolplus dry and fan offsets overriding hysterisis
  *						Display MyCool set points or Dry and Fan
  *  Jul 14, 2020 v0.0.9T Occasional error on transmission. Use a 125ms delay between all device commands vs issue all 5 at once
@@ -147,6 +152,8 @@ def mainPage()
 					fanPoint=dryPoint - settings.globalFanOffset
 				paragraph "MyCool settings Hysteresis:$hysteresis, coolSetpoint:$coolSetPoint, dryPoint:$dryPoint, fanPoint:$fanPoint"
 				}
+ 			input name: "globalCommandDelay", type: "number", required: false, range: "0..2000",  submitOnChange: false, defaultValue: 1000,
+ 					title: "MilliSeconds of delay (Optional). Mitigates sending extraneos commands when changing temperature or mode settings. Default: 1000"
 			input "globalIrBlasters", "capability.actuator", required: true, multiple: true,
 				title: "One or More IR Blasters"
 			}
@@ -354,13 +361,28 @@ def thermostatModeHandler(evt)
 			break
 		}
 	if (settings.logDebugs) log.debug  "thermostatModeHandler irCode: $irCode Prior irCode: ${state.priorIrCode}"
+	if (settings.globalCommandDelay && settings.globalCommandDelay > 0)
+		{
+		if (settings.logDebugs) log.debug  "thermostatModeHandler queueing for ${settings.globalCommandDelay} milliseconds command: irCode: $irCode Prior irCode: ${state.priorIrCode}"
+		runInMillis(settings.globalCommandDelay,"qHandler",[data: irCode])
+		}
+	else
+		{
+		if (settings.logDebugs) log.debug  "thermostatModeHandler not queueing command: irCode: $irCode Prior irCode: ${state.priorIrCode}"
+		qHandler(irCode)
+		}
+	}
+
+
+void qHandler(irCode)				//process commands
+	{
+	if (settings.logDebugs) log.debug  "qHandler irCode: $irCode Prior irCode: ${state.priorIrCode}"
 	if (irCode != state?.priorIrCode)
 		{
-//		globalIrBlasters.SendStoredCode(irCode)
 		globalIrBlasters.each
 			{
 			it.SendStoredCode(irCode)
-			pauseExecution(200)
+			pauseExecution(125)
 			}
 		state.priorIrCode=irCode
 		if (irCode=='ACDry74Swing')
