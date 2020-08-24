@@ -22,6 +22,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *	Aug 24, 2020 v1.0.1 qOffHandler Leave light on when timeout, but lux less than current and turn on with lux
  *	Aug 07, 2020 v1.0.0 Change to parent with children queue apps eliminating manually coded queue code methods
  *						Module deluxLightingQueue must be installed
  *	Aug 04, 2020 v0.2.8 Lights not turning on when switching from Night mode, add statusChange flag to luxHandler
@@ -106,7 +107,7 @@ preferences {
 
 def version()
 	{
-	return "1.0.0";
+	return "1.0.1";
 	}
 
 def debugs(){
@@ -397,7 +398,6 @@ void initialize()
 	state.dvcXref=dvcXref
 
 	buildChildApps()
-
 
 //		state.dvcXref["1057"].each
 //			{
@@ -946,7 +946,25 @@ void qOffHandler(mapData)
 		if (settings.globalLights[mapData.lightIndex].currentValue('switch') == 'on')
 			{
 			if (settings.logDebugs) log.debug "doing off " + ' '+ settings.globalLights[mapData.lightIndex].label +' '+ settings.globalLights.id[mapData.lightIndex]
-			settings.globalLights[mapData.lightIndex].off()
+			settingLuxFlagOn = "global${mapData.lightId}LuxFlagOn"
+			if (settings."$settingLuxFlagOn")
+				{
+				currLux = currLuxCalculate()
+				settingLux="global${mapData.lightId}Lux"
+				if (settings."$settingLux")
+					testLux=settings."$settingLux"
+				else
+					testLux = appLuxCalculate()
+				if (testLux < currLux)
+					{
+					if (settings.logDebugs) log.debug "qOffHandler off honored due to lux level $testLux $currLux"
+					settings.globalLights[mapData.lightIndex].off()
+					}
+				else
+					if (settings.logDebugs) log.debug "qOffHandler ignoring off request due to lux level $testLux $currLux"
+				}
+			else
+				settings.globalLights[mapData.lightIndex].off()
 			}
 		else
 			if (settings.logDebugs) log.debug 'deluxLighting qOffHandler: Light already Off'
