@@ -41,7 +41,7 @@ metadata {
     capability "Refresh"
     capability "Health Check"
     capability "PowerSource"
-	capability "Initialize"
+    capability "Initialize"
 
     attribute "acStatus", "string"
     attribute "batteryStatus", "string"
@@ -129,7 +129,7 @@ void initialize() 	{
   def cmds = []
   cmds << zwave.notificationV3.notificationGet(notificationType: 8, v1AlarmType: 0, event: 0x03)	//on mains?
   cmds << zwave.notificationV3.notificationGet(notificationType: 8, v1AlarmType: 0, event: 0x02)	//on battery?
-  sendToDevice(cmds)
+  sendHubCommand(new hubitat.device.HubMultiAction(commands(cmds), hubitat.device.Protocol.ZWAVE))
 }
 
 def refresh() {
