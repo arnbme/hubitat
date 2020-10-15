@@ -70,6 +70,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Oct 14, 2020 v0.1.2 When outside temperature below setting value, do not use now inefficient MiniSplits for heating divert to baseboards, except on emergency heat.
+ *							Fix issue where heat and cool would not occur.
+ *  Oct 13, 2020 v0.1.2 Setup for individually controlling each miniSplit. Add Label to define app name. 
  *  Aug 15, 2020 v0.1.1 Add optional command queueing to buffer and remove many unneeded commands that may conflict
  *							due to commands entered from dashboard such as temperature down or up tapping on icon
  *							This is in addition to the Temperature Handler delay
@@ -119,7 +122,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.0";
+	return "0.1.2";
 	}
 
 def mainPage()
@@ -128,10 +131,14 @@ def mainPage()
 		{
 		section
 			{
+			if (settings.logDebugs)
+				input "buttonDebugOff", "button", title: "Stop Debug Logging"
+			else
+				input "buttonDebugOn", "button", title: "Debug For 30 minutes"
 			input "globalDisable", "bool", required: true, defaultValue: false,
 				title: "Disable All Functions. Default: Off/False"
-			input "logDebugs", "bool", required: true, defaultValue: false,
-				title: "Do debug logging. Shuts off after 30 minutes Default: Off/False"
+			input "thisName", "text", title: "Name of this MiniSplit controller zone. Eg: Zone1 Office", submitOnChange: true, required: true
+			if(thisName) app.updateLabel("$thisName")
 			input "globalThermostat", "capability.thermostat", required: true, multiple: false, submitOnChange: true,
 				title: "A Thermostat that controls the Mini splits"
 			input "globalMyCool", "bool", required: true, defaultValue: false,
@@ -156,6 +163,12 @@ def mainPage()
  					title: "MilliSeconds of delay (Optional). Mitigates sending extraneos commands when changing temperature or mode settings. Default: 1000"
 			input "globalIrBlasters", "capability.actuator", required: true, multiple: true,
 				title: "One or More IR Blasters"
+ 			input name: "globalMinOutside", type: "number", required: false, range: "0..100",  submitOnChange: true,
+ 					title: "When outside temperature at or below, do not use Minisplits for heating (Optional)"
+			if (globalMinOutside){
+					input name: "globalTempOutside", type: "capability.temperatureMeasurement", required: true,
+							title: "Use this device for outside Temperature"
+				}			
 			}
 		}
 	}
@@ -173,36 +186,47 @@ def updated() {
 
 def initialize()
 	{
-	if(settings.logDebugs)
-		runIn(1800,logsOff)			// turns off debug logging after 30 min
-	else
-		unschedule(logsOff)
 	if (globalDisable)
 		{}
 	else
 		{
-		subscribe(globalThermostat, "thermostatOperatingState", thermostatModeHandler)
+		subscribe(globalThermostat, "thermostatOperatingState", temperatureHandler)
 		subscribe(globalThermostat, "coolingSetpoint", temperatureHandler)
+		subscribe(globalThermostat, "heatingSetpoint", temperatureHandler)
 		subscribe(globalThermostat, "temperature", temperatureHandler)
 		subscribe(globalThermostat, "thermostatMode", temperatureHandler)
 		subscribe(location, "hsmStatus", hsmStatusHandler)
 		}
 	}
 
-void logsOff(){
+
+//	Process Debug buttons
+void appButtonHandler(btn)
+	{
+	switch(btn)
+		{
+		case "buttonDebugOff":
+			debugOff()
+			break
+		case "buttonDebugOn":
+			app.updateSetting("logDebugs",[value:"true",type:"bool"])
+			runIn(1800,debugOff)		//turns off debug logging after 30 Minutes
+			break
+		}
+	}
+
+void debugOff(){
 //	stops debug logging
-	log.info "MiniSplit: debug logging disabled"
+	log.info "settings?.thisName: debug logging disabled"
+	unschedule(debugOff)
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
 
 def temperatureHandler(evt)
 	{
-//	Temperature or cooling setPoint changed on Thermostat
+//	Temperature, Thermostat Mode, heatingSetPoint, or coolingSetPoint changed on Thermostat
 	if (settings.logDebugs) log.debug  "temperatureHandler entered Value: ${evt.value}  mode: ${globalThermostat.currentValue("thermostatMode")}"
-//	pauseExecution(2000)				//allow any operating state change from the virtual thermostat device to complete, it seems delayed, dont know why
-//	thermostatModeHandler(evt)
-//	change above to a runin and unschedule in thermostatModeHandler v004
-	runIn(2,thermostatModeHandler,[data: ["value":"${evt.value}"]])		//This overrwrites prior pending requests
+	runIn(2,thermostatModeHandler,[data: ["value":"${evt.value}"]])		//This overrwrites prior pending requests, eliminating them
 	}
 
 void hsmStatusHandler(evt)
@@ -214,7 +238,7 @@ void hsmStatusHandler(evt)
 	else
 	if (evt.value=='disarmed')
 		{
-		def offMode=state?.offMode
+		def offMode=state?.offMode		//get prior mode
 		switch (offMode)
 			{
 			case 'ignore':
@@ -269,18 +293,18 @@ def thermostatModeHandler(evt)
 	switch (acMode)
 		{
 		case 'cool':
+			def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
+			def hysteresis = globalThermostat.currentValue("hysteresis") as BigDecimal
+			def temperature=globalThermostat.currentValue("temperature") as BigDecimal
 			if (settings.globalMyCool)
 				{
 //				all fields should be BigDecimal
-				def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
-				def hysteresis = globalThermostat.currentValue("hysteresis") as BigDecimal
 				def dryPoint=coolSetPoint - hysteresis
 				if (settings.globalDryOffset)
 					dryPoint=coolSetPoint - settings.globalDryOffset
 				def fanPoint=dryPoint - hysteresis
 				if (settings.globalFanOffset)
 					fanPoint=dryPoint - settings.globalFanOffset
-				def temperature=globalThermostat.currentValue("temperature") as BigDecimal
 				if (settings.logDebugs) log.debug "coolSetPoint: $coolSetPoint ${coolSetPoint.class.name} hysteresis: $hysteresis ${hysteresis.class.name} dryPoint: $dryPoint fanPoint: $fanPoint ${dryPoint.class.name} temperature: $temperature ${temperature.class.name}"
 				if (temperature>=coolSetPoint)
 					{
@@ -307,9 +331,8 @@ def thermostatModeHandler(evt)
 				}
 			else
 				{
-				if (globalThermostat.currentValue("thermostatOperatingState") =='cooling')
+				if (globalThermostat.currentValue("thermostatOperatingState") =='cooling' || coolSetPoint < temperature-hysteresis)
 					{
-					def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
 					if (coolSetPoint < 72) irCode='AC On2169'
 					else
 					if (coolSetPoint < 74) irCode='AC On2271'
@@ -327,25 +350,35 @@ def thermostatModeHandler(evt)
 				}
 			break
 
-		case 'heat':				//follows the thermostat command and settings
-		case 'emergency heat':		//follows the thermostat commands and settings
-			if (globalThermostat.currentValue("thermostatOperatingState") =='heating')
+		case 'heat':
+//			MiniSplis are not efficient below a certain temperature		
+			if (settings?.globalMinOutside && settings.globalTempOutside.currentValue("temperature") <= settings.globalMinOutside)
 				{
-				def heatSetPoint = globalThermostat.currentValue("heatingSetpoint")
-				if (heatSetPoint <= 68) irCode='ACHeat2068'
+				irCode='AC Off'
+				break
+				}
+		case 'emergency heat':		
+			def heatSetPoint = globalThermostat.currentValue("heatingSetpoint")
+			def hysteresis = globalThermostat.currentValue("hysteresis") as BigDecimal
+			def temperature=globalThermostat.currentValue("temperature") as BigDecimal
+			if (globalThermostat.currentValue("thermostatOperatingState") =='heating' || heatSetPoint > temperature+hysteresis)
+				{
+				if (heatSetPoint < 68) irCode='ACHeat2068'
 				else
-				if (heatSetPoint <= 70) irCode='ACHeat2170'
+				if (heatSetPoint < 70) irCode='ACHeat2170'
 				else
-				if (heatSetPoint <= 72) irCode='ACHeat2272'
+				if (heatSetPoint < 72) irCode='ACHeat2272'
 				else
-				if (heatSetPoint <= 74) irCode='ACHeat2374'
+				if (heatSetPoint < 74) irCode='ACHeat2374'
 				else
-				if (heatSetPoint <= 76) irCode='ACHeat2476'
+				if (heatSetPoint < 76) irCode='ACHeat2476'
 				else
 					irCode='ACHeat2578'
 				}
 			else
 				irCode='AC Off'
+
+			if (settings.logDebugs) log.debug "thermostatModeHandler mode:$acMode irCode:$irCode HeatSetPoint:$heatSetPoint Hysteresis:$hysteresis Temperature:$temperature ${globalThermostat.currentValue('thermostatOperatingState')}"
 			break
 
 		case 'off':
@@ -382,7 +415,8 @@ void qHandler(irCode)				//process commands
 		globalIrBlasters.each
 			{
 			it.SendStoredCode(irCode)
-			pauseExecution(125)
+			if (globalIrBlasters.size()> 1)
+				pauseExecution(125)
 			}
 		state.priorIrCode=irCode
 		if (irCode=='ACDry74Swing')
@@ -393,6 +427,9 @@ void qHandler(irCode)				//process commands
 		else
 		if (irCode=='ACFanSwing')
 			globalThermostat.setThermostatFanMode('only')
+		else
+		if (irCode.startsWith('ACHeat'))
+			globalThermostat.setThermostatFanMode('heat')
 		else
 		if (settings.globalMyCool)
 			globalThermostat.setThermostatFanMode('myCool')
