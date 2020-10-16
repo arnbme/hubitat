@@ -13,7 +13,7 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *		Modifications by Arn Burkhoff
- *     03/09/2020	Added push routine allowing for dashboard butttons that work
+ *     03/09/2020	Added push command allowing for dashboard butttons that work in Hubitat
  *							unscheduled unnecessary runin commands	
  */
 metadata {
@@ -80,14 +80,14 @@ def push(val)
 def openPrep(){
 	unschedule (resetToUnknown)
 	sendEvent(name: "door", value: "opening", descriptionText: "Open button pushed.", isStateChange: true, display: false, displayed: true)
-    log.debug "Opening!"
+    log.info "Open Issued"
     runIn(20, resetToUnknown) //Reset to normal state after 20 seconds
 }
 
 def closePrep(){
 	unschedule (resetToUnknown)
 	sendEvent(name: "door", value: "closing", descriptionText: "Close button pushed.", isStateChange: true, display: false, displayed: true)
-    log.debug "Closing!"
+    log.info "Close Issued"
     runIn(20, resetToUnknown)  //Reset to normal state after 20 seconds
 }
 
