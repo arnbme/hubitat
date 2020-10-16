@@ -13,7 +13,7 @@
  *	1. Install IR Blasters, this app is designed to work with Broadlink devices using the now withdrawn Broadlink Mini Driver app at
  *		https://community.hubitat.com/t/withdrawn-native-broadlink-rm-rm-pro-rm-mini-sp-driver-rc-hvac-manager/31344
  *
- *  2. Create working IR code sets for cooling (multiple temperatures), dry, off, and more as necessary
+ *  2. Create working IR code sets for cooling (multiple temperatures), heat (multiple temperatures) dry, off, and more as necessary
  *
  *  3. Must have a working Virtual Thermostat (or perhaps a real device).
  *		I use a Virtual Thermostat averaging temperatures from 3 devices using the HE Average Temperature app at
@@ -21,8 +21,6 @@
  *		Changed the app created child from a virtual temperature sensor device to a virtual thermostat.
  *
  *	4. A dashboard displaying the Virtual Thermostat device or some other method for control
- *
- *	5. Logic for "heat" mode will likely happen in the future
  *
  *	How to store Mini Split IR codes for Fujitsu units. (Your remote key names and setup may vary)
  *	1. Set mini-split device power ON, pressing the remote's Stop/Start key. Mini-Split device powers on with last setting stored in the REMOTE device.
@@ -70,6 +68,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Oct 15, 2020 v0.1.3 Add flag that stops this app from processing HSM Away and Night Mode changes when using Thermostat Scheduler. 
  *  Oct 14, 2020 v0.1.2 When outside temperature below setting value, do not use now inefficient MiniSplits for heating divert to baseboards, except on emergency heat.
  *							Fix issue where heat and cool would not occur.
  *  Oct 13, 2020 v0.1.2 Setup for individually controlling each miniSplit. Add Label to define app name. 
@@ -122,7 +121,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.2";
+	return "0.1.3";
 	}
 
 def mainPage()
@@ -163,6 +162,8 @@ def mainPage()
  					title: "MilliSeconds of delay (Optional). Mitigates sending extraneos commands when changing temperature or mode settings. Default: 1000"
 			input "globalIrBlasters", "capability.actuator", required: true, multiple: true,
 				title: "One or More IR Blasters"
+			input "globalThermostatApp", "bool", required: false, defaultValue: false,
+				title: "Thermostat Scheduler app is controlling this device. When true: disables the app's Off function for Away and Night HSM status modes. Default: Off/False"
  			input name: "globalMinOutside", type: "number", required: false, range: "0..100",  submitOnChange: true,
  					title: "When outside temperature at or below, do not use Minisplits for heating (Optional)"
 			if (globalMinOutside){
@@ -195,7 +196,10 @@ def initialize()
 		subscribe(globalThermostat, "heatingSetpoint", temperatureHandler)
 		subscribe(globalThermostat, "temperature", temperatureHandler)
 		subscribe(globalThermostat, "thermostatMode", temperatureHandler)
-		subscribe(location, "hsmStatus", hsmStatusHandler)
+		if (settings?.globalThermostatApp)
+			{}
+		else	
+			subscribe(location, "hsmStatus", hsmStatusHandler)
 		}
 	}
 
@@ -355,6 +359,7 @@ def thermostatModeHandler(evt)
 			if (settings?.globalMinOutside && settings.globalTempOutside.currentValue("temperature") <= settings.globalMinOutside)
 				{
 				irCode='AC Off'
+				globalThermostat.setThermostatOperatingState('idle')
 				break
 				}
 		case 'emergency heat':		
