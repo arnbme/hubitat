@@ -939,9 +939,9 @@ void PostPoll() {
 		my3day += '</tr>'
 		my3day += '<tr>'
 		my3day += sTD+'Precip:'+sTDE
-		my3day += sTD + (myGetData('Precip0').toBigDecimal() > 0 ? String.format(ddisp_r, myGetData('Precip0').toBigDecimal()) + sSPC + myGetData(sRMETR) + '('+ myGetData('PoP') +'%)' : 'None') + sTDE
-		my3day += sTD + (myGetData('Precip1').toBigDecimal() > 0 ? String.format(ddisp_r, myGetData('Precip1').toBigDecimal()) + sSPC + myGetData(sRMETR) + '('+ myGetData('PoP1') +'%)' : 'None') + sTDE
-		my3day += sTD + (myGetData('Precip2').toBigDecimal() > 0 ? String.format(ddisp_r, myGetData('Precip2').toBigDecimal()) + sSPC + myGetData(sRMETR) + '('+ myGetData('PoP2') +'%)' : 'None') + sTDE
+		my3day += sTD + (myGetData('Precip0').toBigDecimal() > 0 ? String.format(ddisp_r, myGetData('Precip0').toBigDecimal()) + myGetData(sRMETR) + sSPC + '('+ myGetData('PoP') +'%)' : 'None') + sTDE
+		my3day += sTD + (myGetData('Precip1').toBigDecimal() > 0 ? String.format(ddisp_r, myGetData('Precip1').toBigDecimal()) + myGetData(sRMETR) + sSPC + '('+ myGetData('PoP1') +'%)' : 'None') + sTDE
+		my3day += sTD + (myGetData('Precip2').toBigDecimal() > 0 ? String.format(ddisp_r, myGetData('Precip2').toBigDecimal()) + myGetData(sRMETR) + sSPC + '('+ myGetData('PoP2') +'%)' : 'None') + sTDE
 		my3day += '</tr>'
 		my3day += '</table>'
 		my3day += '<table align="center">'
