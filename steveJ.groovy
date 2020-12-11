@@ -103,9 +103,13 @@ void checkQ()
 //	check if there is a uniq state in each device
 	if (settings.logDebugs) log.debug  "checkQ entered"
 	def devicesStates
+	def devId
 	theDevices.each
 		{
-		log.debug "${it.name} ${it.state.delayExpire}"
+		devId = it.id as Long
+		log.debug "${it.name} ${it.id} ${devId}"
+		log.debug "${getSubscribedDeviceById(devId)}" 
+//		log.debug "${it.name} ${it.state.delayExpire}"
 //		deviceStates=it.getCurrentStates()
 //		log.debug "${it.name} $deviceStates"
 		}
