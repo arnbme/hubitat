@@ -68,6 +68,7 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 20, 2021 v0.1.4 in qHandler routine double send command due to occasional missed IR Blaster command sends, or mini-split device failing to respond
  *  Oct 15, 2020 v0.1.3 Add flag that stops this app from processing HSM Away and Night Mode changes when using Thermostat Scheduler. 
  *  Oct 14, 2020 v0.1.2 When outside temperature below setting value, do not use now inefficient MiniSplits for heating divert to baseboards, except on emergency heat.
  *							Fix issue where heat and cool would not occur.
@@ -121,7 +122,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.3";
+	return "0.1.4";
 	}
 
 def mainPage()
@@ -420,6 +421,9 @@ void qHandler(irCode)				//process commands
 		globalIrBlasters.each
 			{
 			it.SendStoredCode(irCode)
+			pauseExecution(2000)			//July 20, 2021 reissue command compensating for lost or ignored commands
+			it.SendStoredCode(irCode)
+			
 			if (globalIrBlasters.size()> 1)
 				pauseExecution(125)
 			}
