@@ -14,38 +14,44 @@
  *
  *    Date        Who            What
  *    ----        ---            ----
- *    2021-01-06  thebearmay	 Original version 0.1.0
- *    2021-01-07  thebearmay     Fix condition causing a loss notifications if they come in rapidly
- *    2021-01-07  thebearmay     Add alternative date format
- *    2021-01-07  thebearmay     Add last5H for horizontal display
- *    2021-01-07  thebearmay     Add leading date option
- *    2011-03-10  thebearmay     Lost span tag with class=last5
- *    2021-11-14  ArnB              Add capability Momentary an routine Push allowing a Dashboard switch to clear all messages. 	
- *    2021-11-15  ArnB              Revise logic minimizing attributes and sendevents. Allow for 5 to 20 messages in tile. Insure tile is less than 1024 	
+ *    2021-01-06  thebearmay	Original version 0.1.0
+ *    2021-01-07  thebearmay	Fix condition causing a loss notifications if they come in rapidly
+ *    2021-01-07  thebearmay	Add alternative date format
+ *    2021-01-07  thebearmay	Add last5H for horizontal display
+ *    2021-01-07  thebearmay	Add leading date option
+ *    2011-03-10  thebearmay	Lost span tag with class=last5
+ *    2021-11-14  ArnB  2.0.0		Add capability Momentary an routine Push allowing a Dashboard switch to clear all messages. 	
+ *    2021-11-15  ArnB  2.0.0		Revise logic minimizing attributes and sendevents. Allow for 5 to 20 messages in tile. Insure tile is less than 1024 	
+ *    2021-11-16  ArnB  2.0.1		Fix: storing one less message than requested. 
+ *											correct <br/> to <br />
+ *											Restore: attribute last5H as an optional preference. 
  */
 import java.text.SimpleDateFormat
-static String version()	{  return '2.0.0'  }
+static String version()	{  return '2.0.1'  }
 
 metadata {
     definition (
-        		name: "Notify Tile Device", 
+		name: "Notify Tile Device", 
 		namespace: "thebearmay", 
 		description: "Simple driver to act as a destination for notifications, and provide an attribute to display the last 5 on a tile.",
 		author: "Jean P. May, Jr.",
-	    	importUrl:"https://raw.githubusercontent.com/thebearmay/hubitat/main/notifyTile.groovy"
+		importUrl:"https://raw.githubusercontent.com/thebearmay/hubitat/main/notifyTile.groovy"
 	) {
 		capability "Notification"
 		capability "Momentary"
 		attribute "last5", "STRING"
+		attribute "last5H", "STRING"
 		command "configure"
 		}   
 	}
 
 preferences {
 	input("debugEnable", "bool", title: "Enable debug logging?")
-    input("dfEU", "bool", title: "Use Date Format dd/MM/yyyy")
-    input("leadingDate", "bool", title:"Use leading date instead of trailing")
-    input("msgLimit", "number", title:"Number of messages from 5 to 20",defaultValue:5, range:5..20)
+	input("dfEU", "bool", title: "Use Date Format dd/MM/yyyy")
+	input("leadingDate", "bool", title:"Use leading date instead of trailing")
+	input("msgLimit", "number", title:"Number of messages from 5 to 20",defaultValue:5, range:5..20)
+	input("create5H", "bool", title: "Create horizontal message tile?")
+
 }
 
 def installed() {
@@ -59,75 +65,81 @@ def updated(){
 	if(debugEnable) runIn(1800,logsOff)
 	if (state.lastLimit>settings.msgLimit)
 		configure()
+	else
+	if (!settings.create5H)
+		sendEvent(name:"last5H", value:'<span class="last5"></span>')
 	state.lastLimit=settings.msgLimit	
 }
 
 def configure() {
 //	log.trace "configure()"
     sendEvent(name:"last5", value:'<span class="last5"></span>')
-    state.msgCount=1
+    sendEvent(name:"last5H", value:'<span class="last5"></span>')
+    state.msgCount=0
 }
 
-def deviceNotification(notification){
+def deviceNotification(notification)
+	{
 	if (debugEnable) log.debug "deviceNotification entered: ${notification}" 
-    dateNow = new Date()
-    if (dfEU)
-        sdf= new SimpleDateFormat("dd/MM/yyyy HH:mm:ss")
-    else
-        sdf = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss")
-    if (leadingDate)
-        notification = sdf.format(dateNow) + " " + notification
-    else
-        notification += " " + sdf.format(dateNow)
+	dateNow = new Date()
+	if (dfEU)
+		sdf= new SimpleDateFormat("dd/MM/yyyy HH:mm:ss")
+	else
+		sdf = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss")
+	if (leadingDate)
+		notification = sdf.format(dateNow) + " " + notification
+	else
+		notification += " " + sdf.format(dateNow)
 
 //	insert new message at beginning	of last5 string
-	wkTile=device.currentValue("last5").replace('<span class="last5">','<span class="last5">' + notification + '<br/>')
+	msgFilled = state.msgCount
+	if (msgFilled>0)
+		wkTile=device.currentValue("last5").replace('<span class="last5">','<span class="last5">' + notification + '<br />')
+	else
+		wkTile=device.currentValue("last5").replace('<span class="last5">','<span class="last5">' + notification)
 
 //	when msg count exceeds limit, purge last message
-	msgFilled = state.msgCount
 	if (debugEnable) log.debug "deviceNotification2 msgFilled: ${msgFilled} msgLimit: ${settings.msgLimit}" 
 	if (msgFilled < settings.msgLimit)
-		{
 		msgFilled++
-		state.msgCount = msgFilled
-		}
-	else	
+	else
 		{
-		int i = wkTile.lastIndexOf('<br/>');
+		int i = wkTile.lastIndexOf('<br />');
 		if (i != -1) 
-    		wkTile = wkTile.substring(0, i) + '</span>';
+			wkTile = wkTile.substring(0, i) + '</span>';
 		}
 
 //	Insure tile length is less than 1024 and hopefully stop loops
 	int wkLen=wkTile.length()	
-	int loop=0
-	while (wkLen > 1024 && loop < msgFilled)
+	while (wkLen > 1024 && msgFilled > 0)
 		{
-		loop++
-		if (debugEnable) log.debug "wkTile length ${wkLen}> 1024 truncating loop: ${loop}"
-		int i = wkTile.lastIndexOf('<br/>');
+		if (debugEnable) log.debug "wkTile length ${wkLen}> 1024 truncating msgCount: ${msgFilled}"
+		int i = wkTile.lastIndexOf('<br />');
 		if (i != -1) 
-    		{
-    		wkTile = wkTile.substring(0, i) + '</span>';
-    		msgFilled = state.msgCount
-    		msgFilled--
-    		state.msgCount=msgFilled
-    		}
-    	else
-    		{
-    		wkTile='<span class="last5"></span>'
-    		state.msgCount=1
-    		}
+			{
+			wkTile = wkTile.substring(0, i) + '</span>';
+			msgFilled--
+			}
+		else
+			{
+			wkTile='<span class="last5"></span>'
+			msgFilled=0
+			}
 		wkLen=wkTile.length()
-		if (debugEnable) log.debug "Truncated wkTile length ${wkLen}, loops: ${loop}"
-		}	
+		if (debugEnable) log.debug "Truncated wkTile length ${wkLen}, msgCount: ${msgFilled}"
+		}
+		
+//	Update attributes and state
 	sendEvent(name:"last5", value: wkTile)
-}    
+	state.msgCount = msgFilled
+	if (settings.create5H)
+		sendEvent(name:"last5H", value: " ** "+wkTile.replaceAll("<br />"," ** ")+" ** ")
+	}    
 
 void logsOff(){
-     device.updateSetting("debugEnable",[value:"false",type:"bool"])
+	device.updateSetting("debugEnable",[value:"false",type:"bool"])
 }
 
 def push() {
-    configure()
+	configure()
 }
