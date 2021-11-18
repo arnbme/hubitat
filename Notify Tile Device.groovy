@@ -27,9 +27,10 @@
 	 *											Restore: attribute last5H as an optional preference. 
 	 *    2021-11-17  ArnB  2.0.2		Add conversion logic from original version in Update routine 
 	 *    2021-11-17  ArnB  2.0.3		Add logic when message count shinks rather than reconfigure
+	 *    2021-11-18  ArnB  2.0.4		Add singleThreaded true 
 	 */
 	import java.text.SimpleDateFormat
-	static String version()	{  return '2.0.3'  }
+	static String version()	{  return '2.0.4'  }
 
 	metadata {
 		definition (
@@ -37,8 +38,9 @@
 			namespace: "thebearmay", 
 			description: "Simple driver to act as a destination for notifications, and provide an attribute to display the last 5 on a tile.",
 			author: "Jean P. May, Jr.",
-			importUrl:"https://raw.githubusercontent.com/thebearmay/hubitat/main/notifyTile.groovy"
-		) {
+			importUrl:"https://raw.githubusercontent.com/thebearmay/hubitat/main/notifyTile.groovy",
+			singleThreaded: true
+			) {
 			capability "Notification"
 			capability "Momentary"
 			attribute "last5", "STRING"
