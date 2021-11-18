@@ -26,9 +26,10 @@
 	 *											correct <br/> to <br />
 	 *											Restore: attribute last5H as an optional preference. 
 	 *    2021-11-17  ArnB  2.0.2		Add conversion logic from original version in Update routine 
+	 *    2021-11-17  ArnB  2.0.3		Add logic when message count shinks rather than reconfigure
 	 */
 	import java.text.SimpleDateFormat
-	static String version()	{  return '2.0.2'  }
+	static String version()	{  return '2.0.3'  }
 
 	metadata {
 		definition (
@@ -96,9 +97,24 @@
 				}
 			}
 
+	// V2.0.3 When new msgLimit less than prior(state) msgLimit adjust message and state values	
 		if (state.lastLimit>settings.msgLimit)
-			configure()
-		else
+			{
+			wkTile=device.currentValue("last5")
+			msgFilled=state.msgCount
+//			log.debug "Shinking tile count lastLimit ${state.lastLimit} newLimit ${settings.msgLimit} msgCount ${msgFilled}"
+			int i = wkTile.lastIndexOf('<br />');
+			while (i != -1 && msgFilled > settings.msgLimit)
+				{
+				wkTile = wkTile.substring(0, i) + '</span>';
+				msgFilled--
+				i = wkTile.lastIndexOf('<br />');
+//				log.debug "looping on shink msgCount ${msgFilled}"
+				}
+			state.msgCount=msgFilled
+			sendEvent(name:"last5", value:wkTile)
+			}
+		
 		if (!settings.create5H)
 			sendEvent(name:"last5H", value:'<span class="last5"></span>')
 		state.lastLimit=settings.msgLimit	
