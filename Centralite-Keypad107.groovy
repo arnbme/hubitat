@@ -14,7 +14,8 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
- *  Dec 14, 2021 v1.0.7 Iris V3 locks after device initiated arrming cancelled. In acknowledeArmRequest issue a refresh delayed 4 sseconds 
+ *  Dec 14, 2021 v1.0.7 Iris V3 with software build less than 10046230, locks after device initiated arming cancelled. 
+ *								In acknowledeArmRequest issue a refresh delayed 4 sseconds 
  *  Oct 30, 2021 v1.0.6	change configure, increase temperature reporting to stop doing a RM refresh every 5 minutes on the keypads
  *								zigbee.configureReporting(0x0402,0x00,0x29,30,3600,0x0008)  
  *								changed 0064 to 0008 to get more reporting 64=1C or 1.8F, 8=.125C or .18F
@@ -942,10 +943,10 @@ def acknowledgeArmRequest(armMode='0'){
 //	if (txtEnable) log.trace   "Method: acknowledgeArmRequest(armMode): "+results
 //	return results
 	cmds
-	if (armMode==4 && device.data.model == '1112-S')
+	if (armMode==4 && device.data.model == '1112-S' && device.data.softwareBuild < '10046230')
 		{
-		runIn(4,"refresh")		//stop device lockup with device initiates failed arming Dec 14, 2021 warning 2 seconds fails to function, 4 always works 
-		if (txtEnable) log.trace "Iris V3 keypad refreshed to prevent freezeup"	 
+		runIn(4,"refresh")		//stop device lockup with device initiates failed arming Dec 14, 2021 Warning 2 seconds fails to function, 4 always works 
+		if (txtEnable) log.trace "Iris V3 keypad softwareBuild ${device.data.softwareBuild}, refreshed to prevent freezeup"	 
 		}
 }
 
