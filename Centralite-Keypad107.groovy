@@ -935,6 +935,11 @@ private setKeypadArmMode(armMode){
 
 def acknowledgeArmRequest(armMode='0'){
 	if (txtEnable) log.trace   "entered acknowledgeArmRequest armMode: ${armMode}"
+	if (armMode==4 && device.data.model == '1112-S' && device.data.softwareBuild < '10046230')
+		{
+		runIn(4,"refresh")		//stop device lockup with device initiates failed arming Dec 14, 2021 Warning 2 seconds fails to function, 4 always works 
+		if (txtEnable) log.trace "Iris V3 keypad softwareBuild ${device.data.softwareBuild}, refreshed to prevent freezeup"	 
+		}
 	List cmds = [
 				 "raw 0x501 {09 01 00 0${armMode}}",
 				 "send 0x${device.deviceNetworkId} 1 1", "delay 100"
@@ -943,11 +948,6 @@ def acknowledgeArmRequest(armMode='0'){
 //	if (txtEnable) log.trace   "Method: acknowledgeArmRequest(armMode): "+results
 //	return results
 	cmds
-	if (armMode==4 && device.data.model == '1112-S' && device.data.softwareBuild < '10046230')
-		{
-		runIn(4,"refresh")		//stop device lockup with device initiates failed arming Dec 14, 2021 Warning 2 seconds fails to function, 4 always works 
-		if (txtEnable) log.trace "Iris V3 keypad softwareBuild ${device.data.softwareBuild}, refreshed to prevent freezeup"	 
-		}
 }
 
 def sendInvalidKeycodeResponse(){
