@@ -6,9 +6,9 @@
  *	This app also attempts to mitigate the amount of time freezing air blows on room occupants. This is a demo concept app, eventually the logic
  *  will liklely be combined into my minisplit app, but for now it's seems to be working
  *
- *	To Do 						add Individual humidity controls to controlled thermostats
- *									perhaps add a DewPoint virtual thermostat to each controlled thermostat allowing data to show on dashboards 
+ *	To Do 						perhaps add a DewPoint virtual thermostat to each controlled thermostat allowing data to show on dashboards 
  *
+ *  Jul 12, 2022	v0.1.4	Add optional individual humidity sensors for each controlled thermostat device
  *  Jul 10, 2022	v0.1.3	Make each controlStat thermostat work independently based on the room's dewPoint
  *										(need to purchase more humidity sensors?)
  *									Deprecate subscribe to HSM status. No longer needed with independent device control
@@ -65,7 +65,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.3";
+	return "0.1.4";
 	}
 
 def mainPage() 
@@ -99,15 +99,17 @@ def mainPage()
 			input "dewOffAway", "decimal", title: "Away Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "*..*", width: 3, required: true
 			input "thisName", "text", title: "Name of this DEW Point Calculator", submitOnChange: true
 			if(thisName) app.updateLabel("$thisName")
-			input "tempSensor", "capability.temperatureMeasurement", title: "Select Temperature Sensor", submitOnChange: true, required: true, multiple: false
-			input "humidSensor", "capability.relativeHumidityMeasurement", title: "Select Humidity Sensor", submitOnChange: true, required: true, multiple: false
-			input "driverStat", "capability.temperatureMeasurement", title: "Select Mode Controlling Thermostat", required: true, multiple: false
-			input "controlStats", "capability.temperatureMeasurement", title: "Select DewPoint Controlled Thermostats ", required: true, multiple: true, submitOnChange: true
+			input "tempSensor", "capability.temperatureMeasurement", title: "Whole House Thermostat", submitOnChange: true, required: true, multiple: false
+			input "humidSensor", "capability.relativeHumidityMeasurement", title: "Whole House Humidity Sensor", submitOnChange: true, required: true, multiple: false
+			input "driverStat", "capability.temperatureMeasurement", title: "Dew Point Mode Controlling Thermostat (Usually same as Whole House Thermostat", required: true, multiple: false
+			input "controlStats", "capability.temperatureMeasurement", title: "Dew Point Controlled Thermostats", required: true, multiple: true, submitOnChange: true
 			if (settings?.tempSensor && settings?.humidSensor && settings?.controlStats)
 				{
 				controlStats.each
 					{
-					paragraph "Dew Point: ${calcDew(false, it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity ${humidSensor.currentHumidity}% ${it.label}"
+					input "humidSensor${it.id}", "capability.relativeHumidityMeasurement", title: "${it.label} Humidity Sensor (Optional uses Whole House Humidity sensor when not defined)", required: false, multiple: false, submitOnChange: true
+					RH= (settings."humidSensor${id}")? settings."humidSensor${id}".currentHumidity : humidSensor.currentHumidity
+					paragraph "Dew Point: ${calcDew(false, it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity: ${RH}% ${it.label}"
 					}
 				}
 			}
@@ -139,7 +141,7 @@ void initialize()
 		{
 		subscribe(it, "coolingSetpoint", handlerCoolingTemp)
 		subscribe(it, "temperature", handlerDeviceTemp)
-		calcDewPointUpdate(it)
+		calcDewUpdateDevice(it)
 		}
 	}	
 
@@ -186,7 +188,9 @@ void calcDewUpdateDevice(dvc)			//dvc must be a thermostat device
 		{
 		def temperature=dvc.currentTemperature
 		def id=dvc.id
-		dewPoint=calcDew(false,temperature)
+		if (settings.logDebugs && settings."humidSensor${id}")
+			log.debug "calcDewUpdateDevice optional humidity sensor found ${dvc.label} ${settings."humidSensor${id}".currentHumidity}"
+		dewPoint = (settings."humidSensor${id}")? calcDew(false,temperature, settings."humidSensor${id}".currentHumidity) : calcDew(false,temperature)
 		def thermostatMode = dvc.currentThermostatMode		
 		def hsmStatus=location.hsmStatus
 		def dewOnTest=dewOn
