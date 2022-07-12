@@ -1,10 +1,13 @@
 /*
  *	This app was developed for Fujitsu minisplits or any minisplit with temperature controlled Cool and Dry modes. It's a work in progress.
- *  Note without some logic the Fujitsu mini-split remains on until shut off, however the units have their own builit-in thermostat controlled logic
+ *  Note without some logic the Fujitsu mini-split remains on until shut off. The units have their own builit-in thermostat controlled logic
  *  and remain on fan mode when temperature is reached. 
  *  
  *	This app also attempts to mitigate the amount of time freezing air blows on room occupants. This is a demo concept app, eventually the logic
  *  will liklely be combined into my minisplit app, but for now it's seems to be working
+ *
+ *	To Do 						add Individual humidity controls to controlled thermostats
+ *									perhaps add a DewPoint virtual thermostat to each controlled thermostat allowing data to show on dashboards 
  *
  *  Jul 10, 2022	v0.1.3	Make each controlStat thermostat work independently based on the room's dewPoint
  *										(need to purchase more humidity sensors?)
@@ -206,6 +209,7 @@ void calcDewUpdateDevice(dvc)			//dvc must be a thermostat device
 			{
 			if (dewPoint >= (dewOnTest + 1.5) && temperature < dvc.currentCoolingSetpoint)
 				{
+//				High humidity with low temperature, kick in the dehumidifier if availabe. With Mini splits dry mode kind of works
 				if (thermostatMode != 'dry')
 					{
 					if (settings.logDebugs) log.debug ("On dry dewpoint: ${dvc.id} ${dvc.name} ${dewPoint}") 
@@ -330,7 +334,7 @@ void handlerMode(evt)
 		}
 	else
 	if (state.lastMode=='dewpt')
-		restoreControlsData(false)		        //RM is doing this on my system so don't restore device mode 
+		restoreControlsData(false)		   //RM is propogating thermostat mode from driverStat on my system, so don't restore device mode here 
 	state.lastMode=evt.value
 	}
 
