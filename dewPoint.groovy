@@ -236,11 +236,6 @@ void calcDewUpdateDevice(dvc)			//dvc must be a thermostat device
 		if (thermostatMode=='off')
 			{
 			if (settings.logDebugs) log.debug ("Already Off ${dvc.id} ${dvc.name} ${dewPoint} On: ${dewOnTest} Off: ${dewOffTest}")
-//			if (dewPoint > dewOffTest)
-//				{
-//				if (settings.logDebugs) log.debug ("Off setting cool dewpoint: ${dvc.id} ${dvc.name} ${dewPoint}") 
-//				dvc.setThermostatMode("cool")
-//				}
 			}	
 		else
 		if (dewPoint < dewOffTest || (dewPoint < (dewOffTest + 1.5) && thermostatMode=='dry'))
