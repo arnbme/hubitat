@@ -84,10 +84,24 @@ def mainPage()
 			{
 			if (settings?.tempSensor && settings?.humidSensor)
 				{
-				paragraph "Dew Point: ${calcDew()}°${location.temperatureScale} Temp: ${tempSensor.currentTemperature}°${location.temperatureScale} Humidity ${humidSensor.currentHumidity}%"
-				if (settings.dewOn) calcTemp('Home',settings.dewOn)
-				if (settings.dewOnNight) calcTemp('Night',settings.dewOnNight)
-				if (settings.dewOnAway) calcTemp('Away',settings.dewOnAway)
+				paragraph "Whole House Dew Point: ${calcDew()}°${location.temperatureScale} Temp: ${tempSensor.currentTemperature}°${location.temperatureScale} Humidity ${humidSensor.currentHumidity}%"
+//				if (settings.dewOn) calcTemp('Home',settings.dewOn)
+//				if (settings.dewOnNight) calcTemp('Night',settings.dewOnNight)
+//				if (settings.dewOnAway) calcTemp('Away',settings.dewOnAway)
+				def dewOnTest=dewOn
+				def dewOffTest=dewOff
+				if (location.hsmStatus=='armedAway')
+					{
+					dewOnTest=dewOnAway
+					dewOffTest=dewOffAway
+					}
+				else
+				if (location.hsmStatus=='armedNight')
+					{
+					dewOnTest=dewOnNight
+					dewOffTest=dewOffNight
+					}
+				paragraph "Dew On Temp: ${dewOnTest}°${location.temperatureScale} Dew Off Temp: ${dewOffTest}°${location.temperatureScale} HSM Status: ${location.hsmStatus}"
 				}
 		 	if (getChildDevice("DEWPoint_${app.id}"))
 				{
@@ -117,22 +131,8 @@ def mainPage()
 					{
 					input "humidSensor${it.id}", "capability.relativeHumidityMeasurement", title: "${it.label} Humidity Sensor (Optional uses Whole House Humidity sensor when not defined)", required: false, multiple: false, submitOnChange: true
 					RH= (settings."humidSensor${id}")? settings."humidSensor${id}".currentHumidity : humidSensor.currentHumidity
-					paragraph "Dew Point: ${calcDew(false, it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity: ${RH}% ${it.label}"
+					paragraph "Dew Point: ${calcDew(false, it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity: ${RH}% Cool Pt: ${it.currentCoolingSetpoint} ${it.label}"
 					}
-				def dewOnTest=dewOn
-				def dewOffTest=dewOff
-				if (location.hsmStatus=='armedAway')
-					{
-					dewOnTest=dewOnAway
-					dewOffTest=dewOffAway
-					}
-				else
-				if (location.hsmStatus=='armedNight')
-					{
-					dewOnTest=dewOnNight
-					dewOffTest=dewOffNight
-					}
-				paragraph "Dew On Temp: ${dewOnTest}°${location.temperatureScale} Dew Off Temp: ${dewOffTest}°${location.temperatureScale} HSM Status: ${location.hsmStatus}"
 				}
 			}
 		}
@@ -388,16 +388,25 @@ void debugOff(){
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
 
+//	Purpose fix weird anomalies likely from Virtual Thermostat mistakenly resetting or failing to set thermostatOperatingState
 void anomalyKiller()
 	{
-//	log.debug 'anomalyKiller entered'
+	if (settings.logDebugs) log.debug 'anomalyKiller entered'
 	controlStats.each
 		{
 		if (it.currentThermostatMode == 'off' && it.currentThermostatOperatingState == 'cooling')
 			{
-//			log.debug "anomaly dry with cooling found for ${it.name}"
-			it.setThermostatOperatingState('idle') //if this does not work issue the off()
+			if (settings.logDebugs) log.debug "anomaly dry with cooling found for ${it.name}"
+			it.setThermostatOperatingState('idle') 			//if this does not work issue the off()
 //			it.off()				
+			}
+		else
+		if (it.currentThermostatMode == 'cool' && it.currentThermostatOperatingState == 'idle' && 
+			it.currentCoolingSetpoint < (it.currentTemperature-it.currentHysteresis))
+			{
+			if (settings.logDebugs) log.debug "anomaly cool with idle found for ${it.name} Cool Pt: ${it.currentCoolingSetpoint} Temperatue: ${it.currentTemperature} Hysteresis: ${it.currentHysteresis}"
+			it.setThermostatOperatingState('cooling') 		//if this does not work issue the cool()
+//			it.cool()				
 			}
 		}
 	}	
