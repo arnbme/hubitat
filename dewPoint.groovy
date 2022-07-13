@@ -8,7 +8,15 @@
  *
  *	To Do 						perhaps add a DewPoint virtual thermostat to each controlled thermostat allowing data to show on dashboards 
  *
+ *  Jul 13, 2022	v0.1.6	The V01.5 delay did not always work add a method that runs 1 second after any cool or off
+ *									that corrects any anomalies on all controlStats such as off with cooling. 
+ *									Done with runIn(1 so when multiples are issued, it only runs once. Yes this is Fugly!
+ *  Jul 12, 2022	v0.1.5	Hubitat thermostat shows anomalous information mode=off operating state =cooling
+ *									Cause: when device temperature changes multiple threads execute against the the virtual thermostat  
+ *									Fix: When a thermostat temperature change occurs allow 200 millisseconds for Virtual thermostat to complete it's mission
+ *											before issuing a the Off or Cool command. Dry command not an issue because thermostat does not do anything with it. 
  *  Jul 12, 2022	v0.1.4	Add optional individual humidity sensors for each controlled thermostat device
+ *									Changed dvc.setThermostatMode("cool")  to dvc.cool()  dvc.setThermostatMode("off")  to dvc.off()
  *  Jul 10, 2022	v0.1.3	Make each controlStat thermostat work independently based on the room's dewPoint
  *										(need to purchase more humidity sensors?)
  *									Deprecate subscribe to HSM status. No longer needed with independent device control
@@ -65,7 +73,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.4";
+	return "0.1.6";
 	}
 
 def mainPage() 
@@ -111,6 +119,20 @@ def mainPage()
 					RH= (settings."humidSensor${id}")? settings."humidSensor${id}".currentHumidity : humidSensor.currentHumidity
 					paragraph "Dew Point: ${calcDew(false, it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity: ${RH}% ${it.label}"
 					}
+				def dewOnTest=dewOn
+				def dewOffTest=dewOff
+				if (location.hsmStatus=='armedAway')
+					{
+					dewOnTest=dewOnAway
+					dewOffTest=dewOffAway
+					}
+				else
+				if (location.hsmStatus=='armedNight')
+					{
+					dewOnTest=dewOnNight
+					dewOffTest=dewOffNight
+					}
+				paragraph "Dew On Temp: ${dewOnTest}°${location.temperatureScale} Dew Off Temp: ${dewOffTest}°${location.temperatureScale} HSM Status: ${location.hsmStatus}"
 				}
 			}
 		}
@@ -181,7 +203,7 @@ def calcDew(adjustDev=true,Tx=tempSensor.currentTemperature, RH= humidSensor.cur
 	return dewPoint
     }	
 	
-void calcDewUpdateDevice(dvc)			//dvc must be a thermostat device 
+void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a thermostat device 
 	{
 //	log.debug "entered calcDewUpdateDevice ${dvc.id} ${dvc.name}"
 	if (driverStat.currentThermostatMode == 'dewpt')
@@ -228,7 +250,10 @@ void calcDewUpdateDevice(dvc)			//dvc must be a thermostat device
 					if (settings.logDebugs) log.debug ("On cool dewpoint: ${dvc.id} ${dvc.name} ${dewPoint}")
 					if (thermostatMode=='dry')
 						dvc.setCoolingSetpoint(state."Temp${id}")
-					dvc.setThermostatMode("cool")
+					if (commandDelay)
+						pauseExecution(300)
+					dvc.cool()
+					runIn(1,anomalyKiller)
 					}
 				}
 			}	
@@ -243,7 +268,10 @@ void calcDewUpdateDevice(dvc)			//dvc must be a thermostat device
 			if (settings.logDebugs) log.debug ("Off dewpoint: ${dvc.id} ${dvc.name} ${dewPoint} On: ${dewOnTest} Off: ${dewOffTest}") 
 			if (thermostatMode=='dry')			//restore original temperature from dry
 				dvc.setCoolingSetpoint(state."Temp${id}")
-			dvc.setThermostatMode("off")
+			if (commandDelay)
+				pauseExecution(300)
+			dvc.off()
+			runIn(1,anomalyKiller)
 			}
 		}
 	}
@@ -314,7 +342,7 @@ void handlerTEMP(evt) {
 //	Update specific controlled thermostat when temperatue changes
 void handlerDeviceTemp(evt) {
 	if (settings.logDebugs) 	log.debug "Device Temperature = ${evt.value} ${evt.device.name}"
-	calcDewUpdateDevice(evt.device)
+		calcDewUpdateDevice(evt.device, true)		//V0.1.5 command delay when calDewUpdateDevice issues on or cool command
 }
 
 void handlerMode(evt) 
@@ -359,4 +387,17 @@ void debugOff(){
 	unschedule(debugOff)
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
-	
+
+void anomalyKiller()
+	{
+//	log.debug 'anomalyKiller entered'
+	controlStats.each
+		{
+		if (it.currentThermostatMode == 'off' && it.currentThermostatOperatingState == 'cooling')
+			{
+//			log.debug "anomaly dry with cooling found for ${it.name}"
+			it.setThermostatOperatingState('idle') //if this does not work issue the off()
+//			it.off()				
+			}
+		}
+	}	
