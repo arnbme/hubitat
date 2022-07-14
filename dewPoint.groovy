@@ -8,6 +8,8 @@
  *
  *	To Do 						perhaps add a DewPoint virtual thermostat to each controlled thermostat allowing data to show on dashboards 
  *
+ *  Jul 14, 2022	v0.1.7	Add missing logic for device humidity sensor subscribe and event
+ *									When house humidity sensor changes only update devices that use it
  *  Jul 13, 2022	v0.1.6	The V01.5 delay did not always work add a method that runs 1 second after any cool or off
  *									that corrects any anomalies on all controlStats such as off with cooling. 
  *									Done with runIn(1 so when multiples are issued, it only runs once. Yes this is Fugly!
@@ -73,7 +75,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.6";
+	return "0.1.7";
 	}
 
 def mainPage() 
@@ -130,7 +132,12 @@ def mainPage()
 				controlStats.each
 					{
 					input "humidSensor${it.id}", "capability.relativeHumidityMeasurement", title: "${it.label} Humidity Sensor (Optional uses Whole House Humidity sensor when not defined)", required: false, multiple: false, submitOnChange: true
-					RH= (settings."humidSensor${id}")? settings."humidSensor${id}".currentHumidity : humidSensor.currentHumidity
+					RH = humidSensor.currentHumidity
+					if (settings."humidSensor${it.id}")			//check if there is a defined humidity sensor
+						{
+						dvc=settings."humidSensor${it.id}"			//resolve name system cant handle more than one level of resolution (at least for me) 
+						RH=dvc.currentHumidity
+						}
 					paragraph "Dew Point: ${calcDew(false, it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity: ${RH}% Cool Pt: ${it.currentCoolingSetpoint} ${it.label}"
 					}
 				}
@@ -163,6 +170,11 @@ void initialize()
 		{
 		subscribe(it, "coolingSetpoint", handlerCoolingTemp)
 		subscribe(it, "temperature", handlerDeviceTemp)
+		if (settings."humidSensor${it.id}")
+				{
+//				objProperties(settings."humidSensor${it.id}")
+				subscribe(settings."humidSensor${it.id}", "humidity", handlerDeviceHUMID)
+				}
 		calcDewUpdateDevice(it)
 		}
 	}	
@@ -310,26 +322,43 @@ void handlerCoolingTemp(evt)
 
 	if (evt.device.currentThermostatMode  != 'dry')	// actually needs to be when we did not change temp when setting dry future logic
 		{
-//		state."Temp${evt.getDeviceId()}"= evt.value
+//		state."Temp${evt.getDeviceId()}"= evt.value				//this is a string causes issues when used  
 		state."Temp${evt.getDeviceId()}"= evt.numberValue
 		}
-//	evt.properties.each{ log.info it}			//keep this here just in case I need to get more info
-//	evt.properties.each							//gets around error on null values, testing for null fails with an error
-//		{ k,v -> 
-//		if (v?.class)	
-//			log.debug  "${k}: ${v} ${v.class.name}"
-//		else	
-//			log.debug  "${k}: ${v}"
-//		}
-//	log.debug evt.value.class.name
-//	log.debug state."Temp${evt.getDeviceId()}".class.name
 	}
+
 void handlerHUMID(evt) {
-	if (settings.logDebugs)	log.debug "Humidity = ${evt.value}"
+	if (settings.logDebugs)	log.debug "Whole House Humidity = ${evt.value}"
 	calcDew()								//get new system dew point
 	controlStats.each
 		{
-		calcDewUpdateDevice(it)		//update each contolled thermostat
+		if (!settings."humidSensor${it.id}")
+			{
+			calcDewUpdateDevice(it)		//update each house humidity contolled thermostat
+//			log.debug 'execute calcDewUpdateDevice ${it.name} using whole house humidistat'
+			}
+		}
+	}
+
+void handlerDeviceHUMID(evt) {
+	if (settings.logDebugs)	
+		log.debug "Device Humidity = ${evt.value} ${evt.deviceId}"
+	controlStats.each
+		{
+		if (settings."humidSensor${it.id}")			//check if using a defined humidity sensor
+			{
+			dvc=settings."humidSensor${it.id}"			//resolve name system cant handle more than one level of resolution (at least for me) 
+//			log.debug dvc.id+' '+evt.deviceId 
+//			log.debug "a humid sensor found ${it.name}"
+//			log.debug dvc.id+' '+dvc.id.class.name+' '+evt.deviceId+' '+evt.deviceId.class.name
+			if (dvc.id == evt.deviceId as String)		//dvc.id = string evt.deviceId = Long	oy vay wont match without changing field type
+				{
+				calcDewUpdateDevice(it)		//update associated thermostat
+//				log.debug "executed calcDewUpdateDevice for ${it.name} event humidistat ${dvc.name}"
+				}
+			else
+				log.debug "did not match"
+			}
 		}
 	}
 
@@ -410,3 +439,15 @@ void anomalyKiller()
 			}
 		}
 	}	
+	
+//	put all properties to debug log	
+	void objProperties(obj)
+		{
+		obj.properties.each							//gets around error on null values, testing for null fails with an error
+			{ k,v -> 
+			if (v?.class)	
+				log.debug  "${k}: ${v} ${v.class.name}"
+			else	
+				log.debug  "${k}: ${v}"
+			}
+		}
