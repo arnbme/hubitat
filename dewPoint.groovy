@@ -3,11 +3,15 @@
  *  Note without some logic the Fujitsu mini-split remains on until shut off. The units have their own builit-in thermostat controlled logic
  *  and remain on fan mode when temperature is reached. 
  *  
+ *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge   
+ *  
  *	This app also attempts to mitigate the amount of time freezing air blows on room occupants. This is a demo concept app, eventually the logic
  *  will liklely be combined into my minisplit app, but for now it's seems to be working
+		
+	to to		get datatypes of numeric fields in calcdew an calcdewUpdate an convert to bigdecimal as needed
  *
- *	To Do 						perhaps add a DewPoint virtual thermostat to each controlled thermostat allowing data to show on dashboards 
- *
+ *  Jul 15, 2022	v0.1.9	standardize numerical fields to BigDecimal
+ *  Jul 15, 2022	v0.1.8	Create a Dew point Virtual temperature device for each controlStats, allows dew point data on Dashboards
  *  Jul 14, 2022	v0.1.7	Add missing logic for device humidity sensor subscribe and event
  *									When house humidity sensor changes only update devices that use it
  *  Jul 13, 2022	v0.1.6	The V01.5 delay did not always work add a method that runs 1 second after any cool or off
@@ -75,7 +79,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.7";
+	return "0.1.9";
 	}
 
 def mainPage() 
@@ -86,7 +90,7 @@ def mainPage()
 			{
 			if (settings?.tempSensor && settings?.humidSensor)
 				{
-				paragraph "Whole House Dew Point: ${calcDew()}°${location.temperatureScale} Temp: ${tempSensor.currentTemperature}°${location.temperatureScale} Humidity ${humidSensor.currentHumidity}%"
+				paragraph "Whole House Dew Point: ${calcDew("DEWPoint_${app.id}")}°${location.temperatureScale} Temp: ${tempSensor.currentTemperature}°${location.temperatureScale} Humidity ${humidSensor.currentHumidity}%"
 //				if (settings.dewOn) calcTemp('Home',settings.dewOn)
 //				if (settings.dewOnNight) calcTemp('Night',settings.dewOnNight)
 //				if (settings.dewOnAway) calcTemp('Away',settings.dewOnAway)
@@ -138,7 +142,7 @@ def mainPage()
 						dvc=settings."humidSensor${it.id}"			//resolve name system cant handle more than one level of resolution (at least for me) 
 						RH=dvc.currentHumidity
 						}
-					paragraph "Dew Point: ${calcDew(false, it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity: ${RH}% Cool Pt: ${it.currentCoolingSetpoint} ${it.label}"
+					paragraph "Dew Point: ${calcDew("DewPt ${it.name} ${it.id}", it.currentTemperature)}°${location.temperatureScale} Temp: ${it.currentTemperature}°${location.temperatureScale} Humidity: ${RH}% Cool Pt: ${it.currentCoolingSetpoint} ${it.label}"
 					}
 				}
 			}
@@ -165,70 +169,91 @@ void initialize()
 	subscribe(tempSensor, "temperature", handlerTEMP)
 	subscribe(humidSensor, "humidity", handlerHUMID)
 	subscribe(driverStat, "thermostatMode", handlerMode)
-	calcDew()
+	calcDew("DEWPoint_${app.id}")
 	controlStats.each
 		{
 		subscribe(it, "coolingSetpoint", handlerCoolingTemp)
 		subscribe(it, "temperature", handlerDeviceTemp)
 		if (settings."humidSensor${it.id}")
-				{
-//				objProperties(settings."humidSensor${it.id}")
-				subscribe(settings."humidSensor${it.id}", "humidity", handlerDeviceHUMID)
-				}
+			{
+//			objProperties(settings."humidSensor${it.id}")
+			subscribe(settings."humidSensor${it.id}", "humidity", handlerDeviceHUMID)
+			}
+		def dvcNm="DewPt ${it.name} ${it.id}"		//Child Device Name
+		def dvcObj=getChildDevice(dvcNm)				//Get the device object
+		if (!dvcObj)												//create child device if it does not exist
+			dvcObj=addChildDevice("hubitat", "Virtual Temperature Sensor", "${dvcNm}", null, [label: "${dvcNm}", name: "${dvcNm}"])
 		calcDewUpdateDevice(it)
 		}
 	}	
 
-void uninstalled()
-	{
-	if (getChildDevice("DEWPoint_${app.id}")) deleteChildDevice("DEWPoint_${app.id}")
-	}
+void uninstalled()	{
+    childDevices.each
+    	{
+    	deleteChildDevice(it.deviceNetworkId)
+    	}
+    }
 	
 void calcTemp(status,Tx,RH=(humidSensor.currentHumidity < 55)? humidSensor.currentHumidity : 55) 
 	{
-	def TD=(location.temperatureScale == "F")? ((Tx - 32) * 5 / 9) : Tx
-	def T =243.04*(((17.625*TD)/(243.04+TD))-Math.log(RH/100))/(17.625+Math.log(RH/100)-((17.625*TD)/(243.04+TD)))
+	BigDecimal TD=(location.temperatureScale == "F")? ((Tx - 32) * 5 / 9) : Tx
+	BigDecimal T =243.04*(((17.625*TD)/(243.04+TD))-Math.log(RH/100))/(17.625+Math.log(RH/100)-((17.625*TD)/(243.04+TD)))
 	if (location.temperatureScale == "F") T = ((T * 1.8) + 32)
 	T=Math.round(T * 10 ) / 10 
 	paragraph "Target  Temp: ${T} RH: ${RH} ${status}"
 	}
 
-def calcDew(adjustDev=true,Tx=tempSensor.currentTemperature, RH= humidSensor.currentHumidity) 
+/*
+ *dvc: name of dew point virtual temperature device to update for example "DewPt ${it.name} ${it.id}"
+*/ 
+def calcDew(dvc=false,Tx=tempSensor.currentTemperature, RH= humidSensor.currentHumidity) 
 	{
-	def T = (location.temperatureScale == "F")? ((Tx - 32) * 5 / 9) : Tx
-	def dewPoint = 243.04 * (Math.log(RH/100)+((17.625*T)/(243.04+T)))/(17.625-Math.log(RH/100)-((17.625*T)/(243.04+T)))
+//	log.debug "calcdew entry ${dvc}"
+	BigDecimal T = (location.temperatureScale == "F")? ((Tx - 32) * 5 / 9) : Tx
+	BigDecimal dewPoint = 243.04 * (Math.log(RH/100)+((17.625*T)/(243.04+T)))/(17.625-Math.log(RH/100)-((17.625*T)/(243.04+T)))
 	if (location.temperatureScale == "F")
 		dewPoint = ((dewPoint * 1.8) + 32)
 	dewPoint=Math.round(dewPoint * 10 ) / 10
-//	log.debug "${dewPoint} ${averageDev.currentTemperature}"
-	if (adjustDev)
+	if (dvc)
 		{
-	 	def averageDev = getChildDevice("DEWPoint_${app.id}")
-		if (averageDev && dewPoint != averageDev.currentTemperature)
+		def dvcObj=getChildDevice(dvc)							//Get the dew point temperature holding device
+//		if (dvcObj)
+//			log.debug "calcdew dvcobj: ${dvcObj}"
+//		else
+//			log.debug "no device object" 
+//		BigDecimal dewPtBD=dewPoint
+		if (dvcObj && dewPoint != dvcObj.currentTemperature)	//update target dvc when defined
 			{
- 			if (settings.logDebugs) log.debug "update dewPoint: ${dewPoint} from ${averageDev.currentTemperature} Humid: ${RH} Temp: ${tempSensor.currentTemperature}"
-			averageDev.setTemperature(dewPoint)
+			if (settings.logDebugs) log.debug "update dewPoint: ${dewPoint} from ${dvc.currentTemperature} Humid: ${RH} Temp: ${tempSensor.currentTemperature}"
+			dvcObj.setTemperature(dewPoint)
 			}
-//		else 
-//			if (settings.logDebugs) log.debug "skipped update dewpoint did not change or device not defined"
-		}
+		else 
+			if (settings.logDebugs) log.debug "skipped update dewpoint for device: ${dvc}"
+		}	
 	return dewPoint
     }	
 	
-void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a thermostat device 
+/*
+ * dvc: Must be a controlStats Temperature Device Object
+ * dew point is calculated all the time for use on the dashboards
+*/ 
+void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat device 
 	{
 //	log.debug "entered calcDewUpdateDevice ${dvc.id} ${dvc.name}"
+	def temperature=dvc.currentTemperature
+	def id=dvc.id
+	if (settings.logDebugs && settings."humidSensor${id}")
+		log.debug "calcDewUpdateDevice optional humidity sensor found ${dvc.label} ${settings."humidSensor${id}".currentHumidity}"
+
+	def nameDewPt="DewPt ${dvc.name} ${dvc.id}"
+	dewPoint = (settings."humidSensor${id}")? calcDew(nameDewPt,temperature, settings."humidSensor${id}".currentHumidity,) : calcDew(nameDewPt,temperature)
+
 	if (driverStat.currentThermostatMode == 'dewpt')
 		{
-		def temperature=dvc.currentTemperature
-		def id=dvc.id
-		if (settings.logDebugs && settings."humidSensor${id}")
-			log.debug "calcDewUpdateDevice optional humidity sensor found ${dvc.label} ${settings."humidSensor${id}".currentHumidity}"
-		dewPoint = (settings."humidSensor${id}")? calcDew(false,temperature, settings."humidSensor${id}".currentHumidity) : calcDew(false,temperature)
 		def thermostatMode = dvc.currentThermostatMode		
 		def hsmStatus=location.hsmStatus
-		def dewOnTest=dewOn
-		def dewOffTest=dewOff
+		BigDecimal dewOnTest=dewOn
+		BigDecimal dewOffTest=dewOff
 		
 		if (hsmStatus=='armedAway')
 			{
@@ -329,7 +354,7 @@ void handlerCoolingTemp(evt)
 
 void handlerHUMID(evt) {
 	if (settings.logDebugs)	log.debug "Whole House Humidity = ${evt.value}"
-	calcDew()								//get new system dew point
+	calcDew("DEWPoint_${app.id}")								//get new system dew point
 	controlStats.each
 		{
 		if (!settings."humidSensor${it.id}")
@@ -365,7 +390,7 @@ void handlerDeviceHUMID(evt) {
 //	System temperatue change does not impact conntolled devices
 void handlerTEMP(evt) {
 	if (settings.logDebugs) log.debug "Average House Temperature = ${evt.value}"
-	calcDew()
+	calcDew("DEWPoint_${app.id}")
 }
 
 //	Update specific controlled thermostat when temperatue changes
