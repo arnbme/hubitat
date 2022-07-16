@@ -1,25 +1,23 @@
 /*
- *	This app was developed for Fujitsu minisplits or any minisplit with temperature controlled Cool and Dry modes. It's a work in progress.
- *  Note without some logic the Fujitsu mini-split remains on until shut off. The units have their own builit-in thermostat controlled logic
- *  and remain on fan mode when temperature is reached. 
+ *	Adjust (virtual) thermostats based on Room or Whole house Dew Point
+ *  Used to control my Fujitsu minisplits or any minisplit with temperature controlled Cool and Dry using Dew Point. 
+ * 
+ *	Please note you must already have some method of actually sending IR commands to the mini-splits. I'm using the (Withdrawn) Broadlink app with IR devices,
+ *	along with my custom minisplit app. If your thermostats are real you have an easier task.
  *  
  *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge   
- *  
- *	This app also attempts to mitigate the amount of time freezing air blows on room occupants. This is a demo concept app, eventually the logic
- *  will liklely be combined into my minisplit app, but for now it's seems to be working
-		
-	to to		get datatypes of numeric fields in calcdew an calcdewUpdate an convert to bigdecimal as needed
  *
+ *  Jul 16, 2022	v0.2.0	verify dewPoint off is less than dew point on in settings page, update settings descriptions
  *  Jul 15, 2022	v0.1.9	standardize numerical fields to BigDecimal
  *  Jul 15, 2022	v0.1.8	Create a Dew point Virtual temperature device for each controlStats, allows dew point data on Dashboards
  *  Jul 14, 2022	v0.1.7	Add missing logic for device humidity sensor subscribe and event
  *									When house humidity sensor changes only update devices that use it
- *  Jul 13, 2022	v0.1.6	The V01.5 delay did not always work add a method that runs 1 second after any cool or off
- *									that corrects any anomalies on all controlStats such as off with cooling. 
+ *  Jul 13, 2022	v0.1.6	The V01.5 delay did not always work add method anamalyKiller that runs 1 second after any cool or off
+ *									that corrects any anomalies on all controlStats such as off with cooling.
  *									Done with runIn(1 so when multiples are issued, it only runs once. Yes this is Fugly!
  *  Jul 12, 2022	v0.1.5	Hubitat thermostat shows anomalous information mode=off operating state =cooling
  *									Cause: when device temperature changes multiple threads execute against the the virtual thermostat  
- *									Fix: When a thermostat temperature change occurs allow 200 millisseconds for Virtual thermostat to complete it's mission
+ *									Fix: When a thermostat temperature change occurs allow 300 millisseconds for Virtual thermostat to complete it's mission
  *											before issuing a the Off or Cool command. Dry command not an issue because thermostat does not do anything with it. 
  *  Jul 12, 2022	v0.1.4	Add optional individual humidity sensors for each controlled thermostat device
  *									Changed dvc.setThermostatMode("cool")  to dvc.cool()  dvc.setThermostatMode("off")  to dvc.off()
@@ -79,7 +77,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.9";
+	return "0.2.0";
 	}
 
 def mainPage() 
@@ -117,20 +115,29 @@ def mainPage()
 				input "buttonDebugOff", "button", title: "Stop Debug Logging"
 			else
 				input "buttonDebugOn", "button", title: "Debug For 60 minutes"
-			input "dewOn", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} On", defaultValue: 60.0, range: "*..*", width: 3, required: true
-			input "dewOff", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "*..*", width: 3, required: true
+			input "dewOn", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} On", defaultValue: 60.0, range: "0..100", width: 3, required: true,  submitOnChange: true
+			if (dewOn)
+				input "dewOff", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..${dewOn}", width: 3, required: true
+			else
+				input "dewOff", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..100", width: 3, required: true
 			paragraph""
-			input "dewOnNight", "decimal", title: "Night Dew Point °${location.temperatureScale} On", defaultValue: 60.0, range: "*..*", width: 3, required: true
-			input "dewOffNight", "decimal", title: "Night Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "*..*", width: 3, required: true
+			input "dewOnNight", "decimal", title: "Night Dew Point °${location.temperatureScale} On", defaultValue: 60.0, range: "0..100", width: 3, required: true, submitOnChange: true
+			if (dewOnNight)
+				input "dewOffNight", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..${dewOnNight}", width: 3, required: true
+			else
+				input "dewOffNight", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..100", width: 3, required: true
 			paragraph""
-			input "dewOnAway", "decimal", title: "Away Dew Point °${location.temperatureScale} On", defaultValue: 60.0, range: "*..*", width: 3, required: true
-			input "dewOffAway", "decimal", title: "Away Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "*..*", width: 3, required: true
+			input "dewOnAway", "decimal", title: "Away Dew Point °${location.temperatureScale} On", defaultValue: 60.0, range: "0..100", width: 3, required: true, submitOnChange: true
+			if (dewOnAway)
+				input "dewOffAway", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..${dewOnAway}", width: 3, required: true
+			else
+				input "dewOffAway", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..100", width: 3, required: true
 			input "thisName", "text", title: "Name of this DEW Point Calculator", submitOnChange: true
 			if(thisName) app.updateLabel("$thisName")
-			input "tempSensor", "capability.temperatureMeasurement", title: "Whole House Thermostat", submitOnChange: true, required: true, multiple: false
+			input "tempSensor", "capability.temperatureMeasurement", title: "Whole House Temperature Device", submitOnChange: true, required: true, multiple: false
 			input "humidSensor", "capability.relativeHumidityMeasurement", title: "Whole House Humidity Sensor", submitOnChange: true, required: true, multiple: false
-			input "driverStat", "capability.temperatureMeasurement", title: "Dew Point Mode Controlling Thermostat (Usually same as Whole House Thermostat", required: true, multiple: false
-			input "controlStats", "capability.temperatureMeasurement", title: "Dew Point Controlled Thermostats", required: true, multiple: true, submitOnChange: true
+			input "driverStat", "capability.thermostat", title: "Dew Point Mode Controlling Thermostat. Usually a virtual device modified with to have a dewpt mode", required: true, multiple: false
+			input "controlStats", "capability.thermostat", title: "Dew Point Controlled Thermostats", required: true, multiple: true, submitOnChange: true
 			if (settings?.tempSensor && settings?.humidSensor && settings?.controlStats)
 				{
 				controlStats.each
