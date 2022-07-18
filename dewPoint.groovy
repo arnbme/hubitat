@@ -5,8 +5,14 @@
  *	Please note you must already have some method of actually sending IR commands to the mini-splits. I'm using the (Withdrawn) Broadlink app with IR devices,
  *	along with my custom minisplit app. If your thermostats are real you have an easier task.
  *  
- *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge   
+ *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge 
+ * Figure out how to make this work with thermostat schedular
  *
+ *									add settings overrides as follows name=home|night|away; controledStat device id setting value as Td  on and off
+ *									problem currently handled in code set target in master bedroom night to night -3F 
+ *				
+ *  Jul 17, 2022	v0.2.1	Calculate target cooling setpoint for cool.
+ *									Modify when cooling setpoint is saved on controlStats. 
  *  Jul 16, 2022	v0.2.0	verify dewPoint off is less than dew point on in settings page, update settings descriptions
  *  Jul 15, 2022	v0.1.9	standardize numerical fields to BigDecimal
  *  Jul 15, 2022	v0.1.8	Create a Dew point Virtual temperature device for each controlStats, allows dew point data on Dashboards
@@ -77,7 +83,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.0";
+	return "0.2.1";
 	}
 
 def mainPage() 
@@ -89,9 +95,6 @@ def mainPage()
 			if (settings?.tempSensor && settings?.humidSensor)
 				{
 				paragraph "Whole House Dew Point: ${calcDew("DEWPoint_${app.id}")}°${location.temperatureScale} Temp: ${tempSensor.currentTemperature}°${location.temperatureScale} Humidity ${humidSensor.currentHumidity}%"
-//				if (settings.dewOn) calcTemp('Home',settings.dewOn)
-//				if (settings.dewOnNight) calcTemp('Night',settings.dewOnNight)
-//				if (settings.dewOnAway) calcTemp('Away',settings.dewOnAway)
 				def dewOnTest=dewOn
 				def dewOffTest=dewOff
 				if (location.hsmStatus=='armedAway')
@@ -138,6 +141,22 @@ def mainPage()
 			input "humidSensor", "capability.relativeHumidityMeasurement", title: "Whole House Humidity Sensor", submitOnChange: true, required: true, multiple: false
 			input "driverStat", "capability.thermostat", title: "Dew Point Mode Controlling Thermostat. Usually a virtual device modified with to have a dewpt mode", required: true, multiple: false
 			input "controlStats", "capability.thermostat", title: "Dew Point Controlled Thermostats", required: true, multiple: true, submitOnChange: true
+			BigDecimal dewOnTest=dewOn
+			BigDecimal dewOffTest=dewOff
+
+			if (hsmStatus=='armedAway')
+				{
+				dewOnTest=dewOnAway
+				dewOffTest=dewOffAway
+				}
+			else
+			if (hsmStatus=='armedNight')
+				{
+				dewOnTest=dewOnNight
+				dewOffTest=dewOffNight
+				}
+
+			calcTemp(true, dewOnTest)
 			if (settings?.tempSensor && settings?.humidSensor && settings?.controlStats)
 				{
 				controlStats.each
@@ -179,7 +198,6 @@ void initialize()
 	calcDew("DEWPoint_${app.id}")
 	controlStats.each
 		{
-		subscribe(it, "coolingSetpoint", handlerCoolingTemp)
 		subscribe(it, "temperature", handlerDeviceTemp)
 		if (settings."humidSensor${it.id}")
 			{
@@ -200,14 +218,22 @@ void uninstalled()	{
     	deleteChildDevice(it.deviceNetworkId)
     	}
     }
-	
-void calcTemp(status,Tx,RH=(humidSensor.currentHumidity < 55)? humidSensor.currentHumidity : 55) 
+
+//	Calculate Temperature for DewPoint and Humidity
+//	Input 
+//	Tx = Dew Point target
+//	RH = current relative humidity
+//	Output
+//	T = cool point temperature
+def calcTemp(issuePara=false,Tx,RH=humidSensor.currentHumidity) 
 	{
 	BigDecimal TD=(location.temperatureScale == "F")? ((Tx - 32) * 5 / 9) : Tx
 	BigDecimal T =243.04*(((17.625*TD)/(243.04+TD))-Math.log(RH/100))/(17.625+Math.log(RH/100)-((17.625*TD)/(243.04+TD)))
 	if (location.temperatureScale == "F") T = ((T * 1.8) + 32)
 	T=Math.round(T * 10 ) / 10 
-	paragraph "Target  Temp: ${T} RH: ${RH} ${status}"
+	log.debug "Target Temp: ${T} RH: ${RH} DewPoint: ${Tx}"
+	if (issuePara) paragraph "Target  Temp: ${T} RH: ${RH} DewPoint: ${Tx}"
+	return T
 	}
 
 /*
@@ -224,11 +250,6 @@ def calcDew(dvc=false,Tx=tempSensor.currentTemperature, RH= humidSensor.currentH
 	if (dvc)
 		{
 		def dvcObj=getChildDevice(dvc)							//Get the dew point temperature holding device
-//		if (dvcObj)
-//			log.debug "calcdew dvcobj: ${dvcObj}"
-//		else
-//			log.debug "no device object" 
-//		BigDecimal dewPtBD=dewPoint
 		if (dvcObj && dewPoint != dvcObj.currentTemperature)	//update target dvc when defined
 			{
 			if (settings.logDebugs) log.debug "update dewPoint: ${dewPoint} from ${dvc.currentTemperature} Humid: ${RH} Temp: ${tempSensor.currentTemperature}"
@@ -282,7 +303,8 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 //				High humidity with low temperature, kick in the dehumidifier if availabe. With Mini splits dry mode kind of works
 				if (thermostatMode != 'dry')
 					{
-					if (settings.logDebugs) log.debug ("On dry dewpoint: ${dvc.id} ${dvc.name} ${dewPoint}") 
+					if (settings.logDebugs) log.debug ("On dry dewpoint: ${dvc.id} ${dvc.name} ${dewPoint}")
+					state."Temp${dvc.id}"= dvc.currentCoolingSetpoint		//v021 Jul 17, 2022	save cooling setpoint 
 					dvc.setThermostatMode("dry")
 					(location.temperatureScale == "F")? dvc.setCoolingSetpoint(76) : dvc.setCoolingSetpoint(24) // with minisplits temp must be lowered for dry to actually work 
 					}
@@ -292,12 +314,12 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 				if (thermostatMode != 'cool')
 					{
 					if (settings.logDebugs) log.debug ("On cool dewpoint: ${dvc.id} ${dvc.name} ${dewPoint}")
-					if (thermostatMode=='dry')
-						dvc.setCoolingSetpoint(state."Temp${id}")
-					if (commandDelay)
-						pauseExecution(300)
+					state."Temp${dvc.id}"= dvc.currentCoolingSetpoint		//v021 Jul 17, 2022	save cooling setpoint 
+					if (hsmStatus=='armedNight' && dvc.name=='Zone4 MasterBedRoom')		//adjust night Td for Master bedroom
+						dewOnTest = dewOnTest - 3
+					dvc.setCoolingSetpoint(calcTemp(false, dewOnTest))		//set cool point target tempereature
 					dvc.cool()
-					runIn(1,anomalyKiller)
+					runIn(1,anomalyKiller)												
 					}
 				}
 			}	
@@ -310,10 +332,6 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 		if (dewPoint < dewOffTest || (dewPoint < (dewOffTest + 1.5) && thermostatMode=='dry'))
 			{
 			if (settings.logDebugs) log.debug ("Off dewpoint: ${dvc.id} ${dvc.name} ${dewPoint} On: ${dewOnTest} Off: ${dewOffTest}") 
-			if (thermostatMode=='dry')			//restore original temperature from dry
-				dvc.setCoolingSetpoint(state."Temp${id}")
-			if (commandDelay)
-				pauseExecution(300)
 			dvc.off()
 			runIn(1,anomalyKiller)
 			}
@@ -343,21 +361,6 @@ void restoreControlsData(resetMode=false)
 			it.setThermostatMode(state."Mode${it.id}")
 		}
 	}	
-
-//	Trigger: device cooling setpoint is changed
-//	Set: save restore temperature for device, when device mode is not dry
-//  DOES NOT IMPACT DEW RUNNING CRITERIA, simply update saved state temperature
-void handlerCoolingTemp(evt) 
-	{
-	if (settings.logDebugs)
-		log.debug "handlerCoolingTemp ${evt.getDevice()} ${evt.getDeviceId()} ${evt.value} ${evt.source} ${evt.installedAppId} ${evt.device.currentThermostatMode}"
-
-	if (evt.device.currentThermostatMode  != 'dry')	// actually needs to be when we did not change temp when setting dry future logic
-		{
-//		state."Temp${evt.getDeviceId()}"= evt.value				//this is a string causes issues when used  
-		state."Temp${evt.getDeviceId()}"= evt.numberValue
-		}
-	}
 
 void handlerHUMID(evt) {
 	if (settings.logDebugs)	log.debug "Whole House Humidity = ${evt.value}"
@@ -413,16 +416,16 @@ void handlerMode(evt)
 	if (evt.value=='dewpt')
 		{
 //		save all target devices temperature and running mode, set cool running mode
-		saveControlsData(true)
+//		saveControlsData(true)				//deprecate V021 Jul 17, 2022
 		state.lastMode='dewpt'
 		controlStats.each
 			{
 			calcDewUpdateDevice(it)		//update each contolled thermostat
 			}
 		}
-	else
-	if (state.lastMode=='dewpt')
-		restoreControlsData(false)		   //RM is propogating thermostat mode from driverStat on my system, so don't restore device mode here 
+//	else											//deprecate V021 Jul 17, 2022
+//	if (state.lastMode=='dewpt')
+//		restoreControlsData(false)		   //RM is propogating thermostat mode from driverStat on my system, so don't restore device mode here 
 	state.lastMode=evt.value
 	}
 
