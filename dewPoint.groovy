@@ -8,10 +8,12 @@
  *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge 
  * Figure out how to make this work with thermostat schedular
  *
- *									add settings overrides as follows name=home|night|away; controledStat device id setting value as Td  on and off
- *									problem currently handled in code set target in master bedroom night to night -3F 
+ *									todo add rm to turn off thermostat schedular in dewpt mode or add a virtual switch that does same
  *				
- *  Jul 17, 2022	v0.2.1	Calculate target cooling setpoint for cool.
+ *  Jul 17, 2022	v0.2.2	Add dewpoint overide settings for each controlstat
+ *									Issue with removeSetting("dewOff${it.id}")
+ *										Fails with error, it's defined but this does not work. This leaves the state.off setting defined but it does not hurt anything.
+ *  Jul 17, 2022	v0.2.1	Calculate target cooling setpoint for cool and set
  *									Modify when cooling setpoint is saved on controlStats. 
  *  Jul 16, 2022	v0.2.0	verify dewPoint off is less than dew point on in settings page, update settings descriptions
  *  Jul 15, 2022	v0.1.9	standardize numerical fields to BigDecimal
@@ -83,7 +85,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.1";
+	return "0.2.2";
 	}
 
 def mainPage() 
@@ -155,13 +157,45 @@ def mainPage()
 				dewOnTest=dewOnNight
 				dewOffTest=dewOffNight
 				}
-
 			calcTemp(true, dewOnTest)
 			if (settings?.tempSensor && settings?.humidSensor && settings?.controlStats)
 				{
+				BigDecimal Td=-1
 				controlStats.each
 					{
 					input "humidSensor${it.id}", "capability.relativeHumidityMeasurement", title: "${it.label} Humidity Sensor (Optional uses Whole House Humidity sensor when not defined)", required: false, multiple: false, submitOnChange: true
+					input "dewOn${it.id}", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} On", range: "0..100", width: 3, required: false,  submitOnChange: true
+					if (settings."dewOn${it.id}")
+						{
+						Td=settings."dewOn${it.id}"			//resolve what would be double parens that fails
+//						input "dewOff${it.id}", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: "${Td}", range: "0..${Td}", width: 3, required: true
+						input "dewOff${it.id}", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", range: "0..${Td}", width: 3, required: true
+						}
+//					else			
+//					if (settings."dewOff${it.id}")
+//						removeSetting("dewOff${it.id}")	//removeSetting fails witth error it's defined but this does not work. It leaves the off setting defined but it does not hurt anything
+					paragraph""
+					input "dewOnNight${it.id}", "decimal", title: "Night Dew Point °${location.temperatureScale} On", range: "0..100", width: 3, required: false, submitOnChange: true
+					if (settings."dewOnNight${it.id}")
+						{
+						Td=settings."dewOnNight${it.id}"			//resolve what would be double parens that fails
+						input "dewOffNight${it.id}", "decimal", title: "Night Dew Point °${location.temperatureScale} Off",  range: "0..${Td}", width: 3, required: true
+						}
+//					else
+//					if (settings."dewOffNight${it.id}")
+//						removeSetting("dewOffNight${it.id}")
+
+					paragraph""
+					input "dewOnAway${it.id}", "decimal", title: "Away Dew Point °${location.temperatureScale} On", range: "0..100", width: 3, required: false, submitOnChange: true
+					if (settings."dewOnAway${it.id}")
+						{
+						Td=settings."dewOnAway${it.id}"			//resolve what would be double parens that fails
+						input "dewOffAway${it.id}", "decimal", title: "Away Dew Point °${location.temperatureScale} Off",  range: "0..${Td}", width: 3, required: true
+						}
+//					else
+//					if (settings."dewOffAway${it.id}")
+//						removeSetting("dewOffAway${it.id}")
+
 					RH = humidSensor.currentHumidity
 					if (settings."humidSensor${it.id}")			//check if there is a defined humidity sensor
 						{
@@ -221,18 +255,20 @@ void uninstalled()	{
 
 //	Calculate Temperature for DewPoint and Humidity
 //	Input 
-//	Tx = Dew Point target
+//	Tx = Dew Point target from a setting. This data is usually in Double data format
 //	RH = current relative humidity
 //	Output
-//	T = cool point temperature
+//	T = cool point temperature Returns this temp - 1f or .5 c to force units to cool beyond target temp if necessary
 def calcTemp(issuePara=false,Tx,RH=humidSensor.currentHumidity) 
 	{
+//	log.debug "calcTemp entry TX: ${Tx} ${Tx.class.name} ${issuePara} ${Math.round(Tx * 10 ) / 10}"
 	BigDecimal TD=(location.temperatureScale == "F")? ((Tx - 32) * 5 / 9) : Tx
 	BigDecimal T =243.04*(((17.625*TD)/(243.04+TD))-Math.log(RH/100))/(17.625+Math.log(RH/100)-((17.625*TD)/(243.04+TD)))
 	if (location.temperatureScale == "F") T = ((T * 1.8) + 32)
 	T=Math.round(T * 10 ) / 10 
-	log.debug "Target Temp: ${T} RH: ${RH} DewPoint: ${Tx}"
-	if (issuePara) paragraph "Target  Temp: ${T} RH: ${RH} DewPoint: ${Tx}"
+//	Decimal settings data fields are stored as java double, so convert TX before displaying	
+//	log.debug "Target Temp: ${T} RH: ${RH} DewPoint: ${Math.round(Tx *10) / 10}"
+	if (issuePara) paragraph "Target  Temp: ${T} RH: ${RH} DewPoint: ${Math.round(Tx *10) / 10}"
 	return T
 	}
 
@@ -285,15 +321,38 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 		
 		if (hsmStatus=='armedAway')
 			{
-			dewOnTest=dewOnAway
-			dewOffTest=dewOffAway
+			if (settings."dewOnAway${dvc.id}")
+				{
+				dewOnTest=settings."dewOnAway${dvc.id}"
+				dewOffTest=settings."dewOffAway${dvc.id}"
+				}
+			else
+				{
+				dewOnTest=settings.dewOnAway
+				dewOffTest=settings.dewOffAway
+				}
 			}
 		else
 		if (hsmStatus=='armedNight')
 			{
-			dewOnTest=dewOnNight
-			dewOffTest=dewOffNight
+			if (settings."dewOnNight${dvc.id}")
+				{
+				dewOnTest=settings."dewOnNight${dvc.id}"
+				dewOffTest=settings."dewOffNight${dvc.id}"
+				}
+			else
+				{
+				dewOnTest=settings.dewOnNight
+				dewOffTest=settings.dewOffNight
+				}
 			}
+		else	
+		if (settings."dewOn${dvc.id}")
+			{
+			dewOnTest=settings."dewOn${dvc.id}"
+			dewOffTest=settings."dewOff${dvc.id}"
+			}
+		
 		if (settings.logDebugs) log.debug "calcDewUpdateDevice ${dvc.id} ${dvc.name} ${dewPoint} On: ${dewOnTest} Off: ${dewOffTest} ${temperature} "
 
 		if (dewPoint >= dewOnTest)
@@ -315,9 +374,7 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 					{
 					if (settings.logDebugs) log.debug ("On cool dewpoint: ${dvc.id} ${dvc.name} ${dewPoint}")
 					state."Temp${dvc.id}"= dvc.currentCoolingSetpoint		//v021 Jul 17, 2022	save cooling setpoint 
-					if (hsmStatus=='armedNight' && dvc.name=='Zone4 MasterBedRoom')		//adjust night Td for Master bedroom
-						dewOnTest = dewOnTest - 3
-					dvc.setCoolingSetpoint(calcTemp(false, dewOnTest))		//set cool point target tempereature
+					dvc.setCoolingSetpoint((calcTemp(false, dewOnTest) - 1/2))		//v022 set cool point target tempereature from desired DewPoint and Relative Humidity less .5
 					dvc.cool()
 					runIn(1,anomalyKiller)												
 					}
