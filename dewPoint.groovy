@@ -10,6 +10,7 @@
  *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge 
  *
  *  Jul 18, 2022	v0.2.5	create and maintain a humidity device index, speeds up processing for humidity device events.
+ *  								Fix the dewOff overrides entry error caused by system using a Double for holding decimal EG 57.4 entry is > 57.35999999 yada yada Double  
  *  Jul 18, 2022	v0.2.4	create and set virtualSwitch that may be tested by thermostatSchedular and other apps On when in dewpt mode
  *  Jul 18, 2022	v0.2.3	subscribe and react to HSM status changes
  *  Jul 17, 2022	v0.2.2	Add dewpoint overide settings for each controlstat
@@ -161,8 +162,7 @@ def mainPage()
 					input "dewOn${it.id}", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} On", range: "0..100", width: 3, required: false,  submitOnChange: true
 					if (settings."dewOn${it.id}")
 						{
-						Td=settings."dewOn${it.id}"			//resolve what would be double parens that fails
-//						input "dewOff${it.id}", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: "${Td}", range: "0..${Td}", width: 3, required: true
+						Td=Math.round(settings."dewOnAway${it.id}" *10) / 10	//resolve what would be double parens that fails and round the double back to entered number
 						input "dewOff${it.id}", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", range: "0..${Td}", width: 3, required: true
 						}
 //					else			
@@ -172,7 +172,7 @@ def mainPage()
 					input "dewOnNight${it.id}", "decimal", title: "Night Dew Point °${location.temperatureScale} On", range: "0..100", width: 3, required: false, submitOnChange: true
 					if (settings."dewOnNight${it.id}")
 						{
-						Td=settings."dewOnNight${it.id}"			//resolve what would be double parens that fails
+						Td=Math.round(settings."dewOnNight${it.id}" *10) / 10	//resolve what would be double parens that fails and round the Double back to entered number
 						input "dewOffNight${it.id}", "decimal", title: "Night Dew Point °${location.temperatureScale} Off",  range: "0..${Td}", width: 3, required: true
 						}
 //					else
@@ -183,7 +183,7 @@ def mainPage()
 					input "dewOnAway${it.id}", "decimal", title: "Away Dew Point °${location.temperatureScale} On", range: "0..100", width: 3, required: false, submitOnChange: true
 					if (settings."dewOnAway${it.id}")
 						{
-						Td=settings."dewOnAway${it.id}"			//resolve what would be double parens that fails
+						Td=Math.round(settings."dewOnAway${it.id}" *10) / 10	//resolve what would be double parens that fails and round the Double back to entered number
 						input "dewOffAway${it.id}", "decimal", title: "Away Dew Point °${location.temperatureScale} Off",  range: "0..${Td}", width: 3, required: true
 						}
 //					else
