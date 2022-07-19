@@ -9,6 +9,10 @@
  *  
  *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge 
  *
+ *  Jul 19, 2022	v0.2.6	add timed settings to mimic thermostat schedule 
+ *									Use Night settings start time, when HSM status is disarmed/armedhome
+ *									Use disarm/armed home settings start time, when HSM status is armedNight
+ *									Fix issue caused by HSM double issueing arm status
  *  Jul 18, 2022	v0.2.5	create and maintain a humidity device index, speeds up processing for humidity device events.
  *  								Fix the dewOff overrides entry error caused by system using a Double for holding decimal EG 57.4 entry is > 57.35999999 yada yada Double  
  *  Jul 18, 2022	v0.2.4	create and set virtualSwitch that may be tested by thermostatSchedular and other apps On when in dewpt mode
@@ -88,7 +92,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.5";
+	return "0.2.6";
 	}
 
 def mainPage() 
@@ -97,7 +101,29 @@ def mainPage()
 		{
 		section 
 			{
-			BigDecimal dewOnTest=dewOn
+			def tm = new Date().format("HH:mm", location.timeZone)	//get current h
+			def hsmStatus=location.hsmStatus
+			def hsmStatusOld=hsmStatus
+
+//		Use optional time settings to override hsmStatus setting, kind of mimics Thermostat Scheduler app						
+			if (settings.timeNight  && settings.timeNormal)
+				{
+				if (hsmStatus == 'armedNight')
+					{
+					if (tm >= settings.timeNormal.substring(11,16))
+						hsmStatus='armedHome'
+					}
+				else	
+				if (hsmStatus != 'armedAway')		//leaves disarmed and armedHome
+					{
+					if (tm >= settings.timeNight.substring(11,16) || tm <= settings.timeNormal.substring(11,16))
+						hsmStatus='armedNight'
+					}
+//				if (hsmStatusOld != hsmStatus)
+//					log.debug "Status override by time ${tm} was ${hsmStatusOld} changed to ${hsmStatus}"   
+				}
+
+ 			BigDecimal dewOnTest=dewOn
 			BigDecimal dewOffTest=dewOff
 
 			if (hsmStatus=='armedAway')
@@ -150,6 +176,8 @@ def mainPage()
 			input "tempSensor", "capability.temperatureMeasurement", title: "Whole House Temperature Device", submitOnChange: true, required: true, multiple: false
 			input "humidSensor", "capability.relativeHumidityMeasurement", title: "Whole House Humidity Sensor", submitOnChange: true, required: true, multiple: false
 			input "driverStat", "capability.thermostat", title: "Dew Point Mode Controlling Thermostat. Usually a virtual device modified with to have a dewpt mode", required: true, multiple: false
+			input "timeNight", "time", title: "Use Night Dew Points after this time when status is disarmed or armedHome", required: false
+			input "timeNormal", "time", title: "Use Standard Dew Points after this time when status is armedNight ", required: false
 			input "controlStats", "capability.thermostat", title: "Dew Point Controlled Thermostats", required: true, multiple: true, submitOnChange: true
 	
 			calcTemp(true, dewOnTest)
@@ -214,7 +242,7 @@ void updated() {
 
 void initialize()
 	{
- 	def averageDev = getChildDevice("DEWPoint_${app.id}")
+	def averageDev = getChildDevice("DEWPoint_${app.id}")
 	if(!averageDev) 
 		{
 		averageDev = addChildDevice("hubitat", "Virtual Temperature Sensor", "DEWPoint_${app.id}", null, [label: "DEWPoint_${app.id}", name: "DEWPoint_${app.id}"])
@@ -243,7 +271,7 @@ void initialize()
 		}
 	}
 	buildHumidityIndex()												//Build the humidity device index before subscribing
-	subscribe(location, "hsmSetArm", handlerHSM)
+	subscribe(location, "hsmStatus", handlerHSM)
 	subscribe(driverStat, "thermostatMode", handlerMode)
 	calcDew("DEWPoint_${app.id}")
 	controlStats.each
@@ -327,6 +355,27 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 		{
 		def thermostatMode = dvc.currentThermostatMode		
 		def hsmStatus=location.hsmStatus
+		def hsmStatusOld=hsmStatus
+		def tm = new Date().format("HH:mm", location.timeZone)	//get current h
+		
+//		Use optional time settings to override hsmStatus setting, kind of mimics Thermostat Scheduler app						
+		if (settings.timeNight  && settings.timeNormal)
+			{
+			if (hsmStatus == 'armedNight')
+				{
+				if (tm >= settings.timeNormal.substring(11,16))
+					hsmStatus='armedHome'
+				}
+			else	
+			if (hsmStatus != 'armedAway')		//leaves disarmed and armedHome
+				{
+				if (tm >= settings.timeNight.substring(11,16) || tm <= settings.timeNormal.substring(11,16))
+					hsmStatus='armedNight'
+				}
+//			if (hsmStatusOld != hsmStatus)
+//				log.debug "Status override by time ${tm} was ${hsmStatusOld} changed to ${hsmStatus}"   
+			}
+			
 		BigDecimal dewOnTest=dewOn
 		BigDecimal dewOffTest=dewOff
 		
@@ -540,9 +589,13 @@ void handlerMode(evt)
 
 void handlerHSM(evt)
 	{
-//	log.debug(evt.value+" "+driverStat.currentThermostatMode)
+//	Handle double issue of hsmstatus	
+//	log.debug(evt.value+" * "+state?.hsmStatus+" * "+driverStat.currentThermostatMode)
+	if (state?.hsmStatus != evt.value)
+		state.hsmStatus = evt.value
+	else	
 	if (driverStat.currentThermostatMode=='dewpt' && (evt.value == 'disarm' || evt.value == 'armAway' || evt.value == 'armHome' || evt.value == 'armNight'))
-		runIn(1,QDewUpdateDevice)				//let things calm down a bit then update things
+			runIn(1,QDewUpdateDevice)				//let things calm down a bit then update things
 	}		
 
 void QDewUpdateDevice()
