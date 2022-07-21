@@ -9,6 +9,7 @@
  *  
  *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge 
  *
+ *  Jul 21, 2022	v0.2.6	minor tweaks for ac cooling tempeature and reinstate subscibe for whole house temperature 
  *  Jul 19, 2022	v0.2.6	add timed settings to mimic thermostat schedule 
  *									Use Night settings start time, when HSM status is disarmed/armedhome
  *									Use disarm/armed home settings start time, when HSM status is armedNight
@@ -272,6 +273,7 @@ void initialize()
 	}
 	buildHumidityIndex()												//Build the humidity device index before subscribing
 	subscribe(location, "hsmStatus", handlerHSM)
+	subscribe(tempSensor, "temperature", handlerTEMP)		//whole house temperature average eye wash only
 	subscribe(driverStat, "thermostatMode", handlerMode)
 	calcDew("DEWPoint_${app.id}")
 	controlStats.each
@@ -419,10 +421,10 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 
 		if (dewPoint >= dewOnTest)
 			{
-			BigDecimal newT=(calcTemp(false, dewOnTest) - 1/2)
+			BigDecimal newT=(calcTemp(false, dewOnTest) - 1.5)
 //			BigDecimal newT=(calcTemp(false, dewOnTest))
-			if (location.temperatureScale == "F" && newT < 77)
-				newT=77
+			if (location.temperatureScale == "F" && newT < 76.5)
+				newT=76.5
 			else
 			if (newT < 25)
 				newT=25
