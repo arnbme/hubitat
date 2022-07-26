@@ -68,6 +68,12 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  Jul 19, 2022	v0.1.6 Change cooling to use newly added non-swing codes
+ *  Aug 20, 2021 v0.1.6 Add support for Dry codes with temperatures using mode Dry and Dry+ 
+ *									added codes ACDry(72|76|78)Swing used along with existing ACDry74Swing
+ *  Aug 09, 2021 v0.1.5 When cool: change to use colder settings making  fan run faster in auto mode and perhaps blow colder 
+ *  Aug 09, 2021 v0.1.5 add support for dry+ mode same as cool but only uses dry. Must set cool temp prior to setting dry+ no temps are shown
+ *  Jul 22, 2021 v0.1.4 delay on dashboard due to additional 2 second delay. Change order of IR command and dashboard display update
  *  Jul 20, 2021 v0.1.4 in qHandler routine double send command due to occasional missed IR Blaster command sends, or mini-split device failing to respond
  *  Oct 15, 2020 v0.1.3 Add flag that stops this app from processing HSM Away and Night Mode changes when using Thermostat Scheduler. 
  *  Oct 14, 2020 v0.1.2 When outside temperature below setting value, do not use now inefficient MiniSplits for heating divert to baseboards, except on emergency heat.
@@ -122,7 +128,7 @@ preferences {
 
 def version()
 	{
-	return "0.1.4";
+	return "0.1.6";
 	}
 
 def mainPage()
@@ -257,6 +263,9 @@ void hsmStatusHandler(evt)
 			case 'dry':
 				globalThermostat.setThermostatMode('dry')
 				break
+			case 'dry+':
+				globalThermostat.setThermostatMode('dry+')
+				break
 			case 'fan':
 				globalThermostat.setThermostatMode('fan')
 				break
@@ -338,23 +347,32 @@ def thermostatModeHandler(evt)
 				{
 				if (globalThermostat.currentValue("thermostatOperatingState") =='cooling' || coolSetPoint < temperature-hysteresis)
 					{
-					if (coolSetPoint < 72) irCode='AC On2169'
+					if (coolSetPoint < 72) irCode='AC2170NS'
+//					if (coolSetPoint < 72) irCode='AC On2169'
 					else
-					if (coolSetPoint < 74) irCode='AC On2271'
+					if (coolSetPoint < 74) irCode='AC2272NS'
+//					if (coolSetPoint < 74) irCode='AC On2271'
+//					if (coolSetPoint < 74) irCode='AC On2169'
 					else
-					if (coolSetPoint < 76) irCode='AC On2373'
+					if (coolSetPoint < 76) irCode='AC2374NS'
+//					if (coolSetPoint < 76) irCode='AC On2373'
+//					if (coolSetPoint < 76) irCode='AC On2271'
 					else
-					if (coolSetPoint < 78) irCode='AC On2475'
+					if (coolSetPoint < 78) irCode='AC2476NS'
+//					if (coolSetPoint < 78) irCode='AC On2475'
+//					if (coolSetPoint < 78) irCode='AC On2373'
 					else
-					if (coolSetPoint < 80) irCode='AC On2577'
+					if (coolSetPoint < 80) irCode='AC2578NS'
+//					if (coolSetPoint < 80) irCode='AC On2577'
+//					if (coolSetPoint < 80) irCode='AC On2475'
 					else
-						irCode='AC On2579'
+						irCode='AC2680NS'
+//						irCode='AC On2579'
 					}
 				else
 					irCode='AC Off'
 				}
 			break
-
 		case 'heat':
 //			MiniSplis are not efficient below a certain temperature		
 			if (settings?.globalMinOutside && settings.globalTempOutside.currentValue("temperature") <= settings.globalMinOutside)
@@ -392,7 +410,36 @@ def thermostatModeHandler(evt)
 			break
 
 		case 'dry':
-			irCode='ACDry74Swing'
+			def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
+			if (coolSetPoint <= 72) irCode='ACDry70Swing'
+			else
+			if (coolSetPoint <= 74) irCode='ACDry72Swing'
+			else
+			if (coolSetPoint <= 76) irCode='ACDry74Swing'
+			else
+			if (coolSetPoint <= 78) irCode='ACDry76Swing'
+			else
+				irCode='ACDry78Swing'
+			break
+
+		case 'dry+':			//dry with thermostat control
+			def coolSetPoint = globalThermostat.currentValue("coolingSetpoint")
+			def hysteresis = globalThermostat.currentValue("hysteresis") as BigDecimal
+			def temperature=globalThermostat.currentValue("temperature") as BigDecimal
+			if (coolSetPoint < temperature-hysteresis)
+				{
+				if (coolSetPoint <= 72) irCode='ACDry70Swing'
+				else
+				if (coolSetPoint <= 74) irCode='ACDry72Swing'
+				else
+				if (coolSetPoint <= 76) irCode='ACDry74Swing'
+				else
+				if (coolSetPoint <= 78) irCode='ACDry76Swing'
+				else
+					irCode='ACDry78Swing'
+				}
+			else
+				irCode='AC Off'
 			break
 
 		case 'fan':
@@ -418,6 +465,24 @@ void qHandler(irCode)				//process commands
 	if (settings.logDebugs) log.debug  "qHandler irCode: $irCode Prior irCode: ${state.priorIrCode}"
 	if (irCode != state?.priorIrCode)
 		{
+		state.priorIrCode=irCode
+		if (irCode.startsWith('ACDry'))
+//			globalThermostat.setThermostatFanMode('Dry')
+			globalThermostat.setThermostatFanMode(irCode)
+		else
+		if (irCode=='AC Off')
+			globalThermostat.setThermostatFanMode('Off')
+		else
+		if (irCode=='ACFanSwing')
+			globalThermostat.setThermostatFanMode('Fan Only')
+		else
+		if (irCode.startsWith('ACHeat'))
+			globalThermostat.setThermostatFanMode('Heat')
+		else
+		if (settings.globalMyCool)
+			globalThermostat.setThermostatFanMode('myCool')
+		else
+			globalThermostat.setThermostatFanMode('Cool')
 		globalIrBlasters.each
 			{
 			it.SendStoredCode(irCode)
@@ -427,22 +492,5 @@ void qHandler(irCode)				//process commands
 			if (globalIrBlasters.size()> 1)
 				pauseExecution(125)
 			}
-		state.priorIrCode=irCode
-		if (irCode=='ACDry74Swing')
-			globalThermostat.setThermostatFanMode('dry')
-		else
-		if (irCode=='AC Off')
-			globalThermostat.setThermostatFanMode('off')
-		else
-		if (irCode=='ACFanSwing')
-			globalThermostat.setThermostatFanMode('only')
-		else
-		if (irCode.startsWith('ACHeat'))
-			globalThermostat.setThermostatFanMode('heat')
-		else
-		if (settings.globalMyCool)
-			globalThermostat.setThermostatFanMode('myCool')
-		else
-			globalThermostat.setThermostatFanMode('cool')
 		}
 	}
