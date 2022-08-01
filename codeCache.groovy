@@ -1,6 +1,5 @@
 /*
  *	Proof of concept Use Hub Variabvle for IR and RF code storage cache
- Paragraph statements throwing an error commented out for now
  *
  *  Copyright 2022 Arn Burkhoff
  *
@@ -64,17 +63,17 @@ def mainPage()
 					else
 					if (appFunction == "Import Codes From Devices")
 						{
-//						paragarph "Import Codes From Devices is a work in progress"
+						paragraph "Import Codes From Devices is a work in progress"
 						}
 					else
 					if (appFunction == "Delete Codes From Cache")
 						{
-//						paragarph "Delete Codes from Cache is a work in progress"
+						paragraph "Delete Codes from Cache is a work in progress"
 						}
 					else
 					if (appFunction == "Delete Codes From Device")
 						{
-//						paragarph "Delete Codes From Device is a work in progress"
+						paragraph "Delete Codes From Device is a work in progress"
 						}
 					else
 					if (appFunction == "Clear Cache")
