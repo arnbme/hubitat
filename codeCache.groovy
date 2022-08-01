@@ -48,7 +48,7 @@ def mainPage()
 				input "buttonDebugOn", "button", title: "Debug For 30 minutes"
 			input "broadlinkDevices", "capability.actuator", title: "Controlled Broadlink IR/RF Devices", required: true, multiple: true
 			input "cacheDevice", "capability.actuator", title: "Broadlink IR/RF Device reserved for cache", required: true, multiple: false
-			if (broadlinkDevices && hubVariable
+			if (broadlinkDevices && hubVariable)
 				{
   				input(name: "appFunction", type: "enum", title: "Select a function", multiple: false, required: false,  submitOnChange: true,
 					options: ["Import Codes From Devices", "Import Codes From String", "Delete Codes From Cache", "Delete Codes From Device","Clear Cache"])
