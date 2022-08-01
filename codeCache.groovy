@@ -42,10 +42,13 @@ def mainPage()
 		{
 		section
 			{
+			if (settings.logDebugs)
+				input "buttonDebugOff", "button", title: "Stop Debug Logging"
+			else
+				input "buttonDebugOn", "button", title: "Debug For 30 minutes"
 			input "broadlinkDevices", "capability.actuator", title: "Controlled Broadlink IR/RF Devices", required: true, multiple: true
-//			input "hubVariable", "capability.variable", title: "Hub Variable used to store code cache", required: true, multiple: false
-//			if (broadlinkDevices && hubVariable
-			if (broadlinkDevices)
+			input "cacheDevice", "capability.actuator", title: "Broadlink IR/RF Device reserved for cache", required: true, multiple: false
+			if (broadlinkDevices && hubVariable
 				{
   				input(name: "appFunction", type: "enum", title: "Select a function", multiple: false, required: false,  submitOnChange: true,
 					options: ["Import Codes From Devices", "Import Codes From String", "Delete Codes From Cache", "Delete Codes From Device","Clear Cache"])
@@ -111,15 +114,31 @@ void appButtonHandler(btn)
 		    Map workCodes = [:]
 			setGlobalVar("IrRfCache", "${workCodes}")
 			break
+		case "buttonDebugOff":
+			debugOff()
+			break
+		case "buttonDebugOn":
+			app.updateSetting("logDebugs",[value:"true",type:"bool"])
+			runIn(1800,debugOff)		//turns off debug logging after 60 Minutes
+			log.info "debug logging enabled"
+			break
 		default:
 			log.debug btn+" processing logic not found"
 			break
 		}
 	}
 
+void debugOff(){
+//	stops debug logging
+	log.info "debug logging disabled"
+	unschedule(debugOff)
+	app.updateSetting("logDebugs",[value:"false",type:"bool"])
+}
+
 void importCodes(codeInput)
 	{
-//	log.debug "importCodes entered"
+	if (settings.logDebugs)
+		log.debug "importCodes entered"
     Map workCodes = [:]
 	codeInput = codeInput?.replace('{','')?.replace('}','')
     codeInput?.split(',')?.each
