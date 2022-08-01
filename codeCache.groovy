@@ -1,5 +1,6 @@
 /*
  *	Proof of concept Use Hub Variabvle for IR and RF code storage cache
+ Paragraph statements throwing an error commented out for now
  *
  *  Copyright 2022 Arn Burkhoff
  *
@@ -48,7 +49,7 @@ def mainPage()
 				input "buttonDebugOn", "button", title: "Debug For 30 minutes"
 			input "broadlinkDevices", "capability.actuator", title: "Controlled Broadlink IR/RF Devices", required: true, multiple: true
 			input "cacheDevice", "capability.actuator", title: "Broadlink IR/RF Device reserved for cache", required: true, multiple: false
-			if (broadlinkDevices && hubVariable)
+			if (broadlinkDevices && cacheDevice)
 				{
   				input(name: "appFunction", type: "enum", title: "Select a function", multiple: false, required: false,  submitOnChange: true,
 					options: ["Import Codes From Devices", "Import Codes From String", "Delete Codes From Cache", "Delete Codes From Device","Clear Cache"])
@@ -63,17 +64,17 @@ def mainPage()
 					else
 					if (appFunction == "Import Codes From Devices")
 						{
-						paragarph "Import Codes From Devices is a work in progress"
+//						paragarph "Import Codes From Devices is a work in progress"
 						}
 					else
 					if (appFunction == "Delete Codes From Cache")
 						{
-						paragarph "Delete Codes from Cache is a work in progress"
+//						paragarph "Delete Codes from Cache is a work in progress"
 						}
 					else
 					if (appFunction == "Delete Codes From Device")
 						{
-						paragarph "Delete Codes From Device is a work in progress"
+//						paragarph "Delete Codes From Device is a work in progress"
 						}
 					else
 					if (appFunction == "Clear Cache")
@@ -108,11 +109,10 @@ void appButtonHandler(btn)
 	switch(btn)
 		{
 		case "buttonImport":
-			importCodes(codeString)
+			cacheDevice.importCodes(codeString)
 			break
 		case "buttonClearCache":
-		    Map workCodes = [:]
-			setGlobalVar("IrRfCache", "${workCodes}")
+			cacheDevice.clearSavedCodes()
 			break
 		case "buttonDebugOff":
 			debugOff()
@@ -134,24 +134,3 @@ void debugOff(){
 	unschedule(debugOff)
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
-
-void importCodes(codeInput)
-	{
-	if (settings.logDebugs)
-		log.debug "importCodes entered"
-    Map workCodes = [:]
-	codeInput = codeInput?.replace('{','')?.replace('}','')
-    codeInput?.split(',')?.each
-    	{
-        def entry = it.split('=')
-        if(entry.size() == 2)
-			{
-			Map codeEntry = [(entry[0].toString().trim()) : (entry[1].toString().trim())]
-			workCodes << codeEntry
-			}
-		}
-//	log.debug workCodes
-//	hubVariable.setVariable(workCodes)
-//	hubVariable=workCodes
-	setGlobalVar("IrRfCache", "${workCodes}")
-    }
