@@ -119,7 +119,7 @@ void appButtonHandler(btn)
 			break
 		case "buttonDebugOn":
 			app.updateSetting("logDebugs",[value:"true",type:"bool"])
-			runIn(1800,debugOff)		//turns off debug logging after 60 Minutes
+			runIn(1800,debugOff)		//turns off debug logging after 30 Minutes
 			log.info "debug logging enabled"
 			break
 		default:
