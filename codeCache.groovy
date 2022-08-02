@@ -51,7 +51,7 @@ def mainPage()
 			if (broadlinkDevices && cacheDevice)
 				{
   				input(name: "appFunction", type: "enum", title: "Select a function", multiple: false, required: false,  submitOnChange: true,
-					options: ["Import Codes From Devices", "Import Codes From String", "Delete Codes From Cache", "Delete Codes From Device","Clear Cache"])
+					options: ["Import Codes From Devices", "Import Codes From String", "View Codes From Cache", "Delete Codes From Device","Clear Cache"])
 				if (appFunction)
 					{
 					if (appFunction == "Import Codes From String")
@@ -66,9 +66,10 @@ def mainPage()
 						paragraph "Import Codes From Devices is a work in progress"
 						}
 					else
-					if (appFunction == "Delete Codes From Cache")
+					if (appFunction == "View Codes From Cache")
 						{
-						input name: "codeNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: cacheDevice.allKnownCodesKeys()
+						paragraph cacheDevice.getDataValue("codes")
+// loops on load?	input name: "codeNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: cacheDevice.getDataValue("codes")
 						}
 					else
 					if (appFunction == "Delete Codes From Device")
