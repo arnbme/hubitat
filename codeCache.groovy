@@ -1,5 +1,5 @@
 /*
- *	Proof of concept Use Hub Variabvle for IR and RF code storage cache
+ *	Proof of concept for IR and RF code storage cache
  *
  *  Copyright 2022 Arn Burkhoff
  *
@@ -68,7 +68,7 @@ def mainPage()
 					else
 					if (appFunction == "Delete Codes From Cache")
 						{
-						listCodes()
+						input name: "codeNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: cacheDevice.allKnownCodesKeys()
 						}
 					else
 					if (appFunction == "Delete Codes From Device")
@@ -133,18 +133,3 @@ void debugOff(){
 	unschedule(debugOff)
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
-
-void listCodes()
-	{
-	Map theCodes = cacheDevice.getSavedCodes()
-	log.debug theCodes
-	def daList=[]
-	theCodes.each
-		{
-		daList << it.key
-		}
-
-//	def daCodes =["b", "c", "X","D","e","A"]
-//	sortedCodes=daCodes.sort()
-	input name: "codeNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: daList.sort()
-	}
