@@ -68,7 +68,7 @@ def mainPage()
 					else
 					if (appFunction == "Delete Codes From Cache")
 						{
-						paragraph "Delete Codes from Cache is a work in progress"
+						listCodes()
 						}
 					else
 					if (appFunction == "Delete Codes From Device")
@@ -133,3 +133,18 @@ void debugOff(){
 	unschedule(debugOff)
 	app.updateSetting("logDebugs",[value:"false",type:"bool"])
 }
+
+void listCodes()
+	{
+	Map theCodes = cacheDevice.getSavedCodes()
+	log.debug theCodes
+	def daList=[]
+	theCodes.each
+		{
+		daList << it.key
+		}
+
+//	def daCodes =["b", "c", "X","D","e","A"]
+//	sortedCodes=daCodes.sort()
+	input name: "codeNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: daList.sort()
+	}
