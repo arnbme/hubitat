@@ -51,7 +51,7 @@ def mainPage()
 			if (broadlinkDevices && cacheDevice)
 				{
   				input(name: "appFunction", type: "enum", title: "Select a function", multiple: false, required: false,  submitOnChange: true,
-					options: ["Import Codes From Devices", "Import Codes From String", "View Codes From Cache", "Delete Codes From Device","Clear Cache"])
+					options: ["Import Codes From Devices", "Import Codes From String", "View Codes From Cache", "Delete Codes From Cache","Clear Cache"])
 				if (appFunction)
 					{
 					if (appFunction == "Import Codes From String")
@@ -68,19 +68,29 @@ def mainPage()
 					else
 					if (appFunction == "View Codes From Cache")
 						{
+						cacheDevice.allKnownCodesKeys()		//refresh the codes list
 						paragraph cacheDevice.getDataValue("codes")
-// loops on load?	input name: "codeNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: cacheDevice.getDataValue("codes")
 						}
 					else
-					if (appFunction == "Delete Codes From Device")
+					if (appFunction == "Delete Codes From Cache")
 						{
-						paragraph "Delete Codes From Device is a work in progress"
+						cacheDevice.allKnownCodesKeys()		//refresh the codes list
+						wkCodes = cacheDevice.getDataValue("codes")
+						wkCodes = wkCodes.replace('[','')?.replace(']','')
+						List wkList = []
+					    wkCodes.split(',')?.each
+						    {
+						     wkList << it
+						     }
+						input name: "deleteNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: wkList
+						if (deleteNames)
+							input "buttonDeleteCacheCodes", "button", title: "Execute Delete"
 						}
 					else
 					if (appFunction == "Clear Cache")
 						{
 						if (codeString)
-							input "buttonClearCache", "button", title: "Execute Clear Cache"
+							input "buttonClearCache", "button", title: "Execute Clear Cache", submitOnChange: true
 						}
 					}
 				}
@@ -113,6 +123,13 @@ void appButtonHandler(btn)
 			break
 		case "buttonClearCache":
 			cacheDevice.clearSavedCodes()
+			break
+		case "buttonDeleteCacheCodes":
+			deleteNames.each
+				{
+//				log.debug '*'+it+'*'
+				cacheDevice.deleteSavedCode(it.trim())	//get rid of leading space or newline causing delete failure
+				}
 			break
 		case "buttonDebugOff":
 			debugOff()
