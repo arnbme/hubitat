@@ -74,7 +74,8 @@ def mainPage()
 					else
 					if (appFunction == "Delete Codes From Cache")
 						{
-						cacheDevice.allKnownCodesKeys()		//refresh the codes list
+						paragraph "Import Codes From Cache is a work in progress"
+/*						cacheDevice.allKnownCodesKeys()		//refresh the codes list
 						wkCodes = cacheDevice.getDataValue("codes")
 						wkCodes = wkCodes.replace('[','')?.replace(']','')
 						List wkList = []
@@ -85,7 +86,7 @@ def mainPage()
 						input name: "deleteNames", type: "enum", title: "Named Codes in cache", multiple: true, required: false,  submitOnChange: true, options: wkList
 						if (deleteNames)
 							input "buttonDeleteCacheCodes", "button", title: "Execute Delete"
-						}
+*/						}
 					else
 					if (appFunction == "Clear Cache")
 						{
