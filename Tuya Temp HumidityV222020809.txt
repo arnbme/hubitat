@@ -524,7 +524,7 @@ def temperatureEvent( temperature )
 
 private void sendDelayedEventTemp(Map map) {
     if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText} (${map.type})"}
-	if (map.value != device.currentTemperaturey)	//may need test if Temperature exists or initialize to 0 at install
+	if (map.value != device.currentTemperature)	//may need test if Temperature exists or initialize to 0 at install
     state.lastTemp = now()
     sendEvent(map)
     }
