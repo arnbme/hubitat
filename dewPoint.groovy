@@ -9,6 +9,8 @@
  *
  *	Probably should have just made this a single device app an install in multiple times. Oh well this was a bit of a challenge
  *
+ *  Aug 19, 2022 v0.2.8	When calculated AC run temperature, newT, is less than minTemperature set to minTemperature
+ *  Aug 17, 2022 v0.2.8	When temperature is less than input minTemperature don't run automations, nothing the system can do to fix it
  *  Jul 19, 2022	v0.2.7	minor tweaks for ac cooling tempeature and reinstate subscibe for whole house temperature
  *  Jul 19, 2022	v0.2.6	add timed settings to mimic thermostat schedule
  *									Use Night settings start time, when HSM status is disarmed/armedhome
@@ -93,7 +95,7 @@ preferences {
 
 def version()
 	{
-	return "0.2.6";
+	return "0.2.8";
 	}
 
 def mainPage()
@@ -172,6 +174,10 @@ def mainPage()
 				input "dewOffAway", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..${dewOnAway}", width: 3, required: true
 			else
 				input "dewOffAway", "decimal", title: "Home/Disarmed Dew Point °${location.temperatureScale} Off", defaultValue: 59.0, range: "0..100", width: 3, required: true
+			if (location.temperatureScale == "F")
+				input "minTemperature", "decimal", title: "Stop cooling when temperature (°F) at this point or lower. Also used as minimum virtual thermostat cooling temperature allowed", defaultValue: 75.5, range: "65..85", required: true
+			else
+				input "minTemperature", "decimal", title: "Stop cooling when temperature (°C) at this point or lower. Also used as minimum virtual thermostat cooling temperature allowed", defaultValue: 24, range: "18..29", required: true
 			input "thisName", "text", title: "Name of this DEW Point Calculator", submitOnChange: true
 			if(thisName) app.updateLabel("$thisName")
 			input "tempSensor", "capability.temperatureMeasurement", title: "Whole House Temperature Device", submitOnChange: true, required: true, multiple: false
@@ -419,15 +425,17 @@ void calcDewUpdateDevice(dvc,commandDelay=false)			//dvc must be a  thermostat d
 
 		if (settings.logDebugs) log.debug "calcDewUpdateDevice ${dvc.id} ${dvc.name} ${dewPoint} On: ${dewOnTest} Off: ${dewOffTest} ${temperature} "
 
-		if (dewPoint >= dewOnTest)
+		if (dewPoint >= dewOnTest && temperature >= minTemperature)
 			{
 			BigDecimal newT=(calcTemp(false, dewOnTest) - 1.5)
+			if (newT< minTemperature)
+				newT=minTemperature
 //			BigDecimal newT=(calcTemp(false, dewOnTest))
-			if (location.temperatureScale == "F" && newT < 76.5)
-				newT=76.5
-			else
-			if (newT < 25)
-				newT=25
+//			if (location.temperatureScale == "F" && newT < 76.5)
+//				newT=76.5
+//			else
+//			if (newT < 25)
+//				newT=25
 //			log.debug "dewOnCalcUpdate ${dewPoint} ${dewOnTest + 1.5} ${temperature} ${newT} ${dvc.name}"
 			if (dewPoint >= (dewOnTest + 1.5) && temperature < newT)
 				{
